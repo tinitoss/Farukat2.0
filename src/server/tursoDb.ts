@@ -13,17 +13,19 @@ if (cleanUrl.startsWith('libsql://')) {
 }
 const TURSO_URL = cleanUrl;
 
+const localDbPath = process.env.VERCEL || process.env.NETLIFY ? "file:/tmp/local_turso.db" : "file:local_turso.db";
+
 let tursoClient: Client | null = null;
 let isUsingLocalFallback = false;
 
 export function getTursoClient(): Client {
   if (!tursoClient) {
     const hasToken = Boolean(TURSO_AUTH_TOKEN && TURSO_AUTH_TOKEN.trim().length > 0);
-    const targetUrl = hasToken ? TURSO_URL : "file:local_turso.db";
+    const targetUrl = hasToken ? TURSO_URL : localDbPath;
 
     if (!hasToken) {
       isUsingLocalFallback = true;
-      console.log(`[Turso DB] TURSO_AUTH_TOKEN is not configured. Falling back to local SQLite database (file:local_turso.db)...`);
+      console.log(`[Turso DB] TURSO_AUTH_TOKEN is not configured. Falling back to local SQLite database (${localDbPath})...`);
     } else {
       console.log(`[Turso DB] Initializing connection to ${TURSO_URL}...`);
     }
@@ -34,8 +36,8 @@ export function getTursoClient(): Client {
         authToken: hasToken ? TURSO_AUTH_TOKEN : undefined,
       });
     } catch (err) {
-      console.warn(`[Turso DB] Failed to create client for ${targetUrl}, switching to file:local_turso.db:`, err);
-      tursoClient = createClient({ url: "file:local_turso.db" });
+      console.warn(`[Turso DB] Failed to create client for ${targetUrl}, switching to ${localDbPath}:`, err);
+      tursoClient = createClient({ url: localDbPath });
       isUsingLocalFallback = true;
     }
   }
@@ -44,8 +46,8 @@ export function getTursoClient(): Client {
 
 export function switchToLocalFallback(): Client {
   if (!isUsingLocalFallback) {
-    console.warn('[Turso DB] Remote database authorization failed (401). Switching to local SQLite database (file:local_turso.db)...');
-    tursoClient = createClient({ url: 'file:local_turso.db' });
+    console.warn(`[Turso DB] Remote database authorization failed (401). Switching to local SQLite database (${localDbPath})...`);
+    tursoClient = createClient({ url: localDbPath });
     isUsingLocalFallback = true;
     initTursoTables().catch(err => console.error('[Turso DB] Fallback schema init notice:', err));
   }

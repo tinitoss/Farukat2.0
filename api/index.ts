@@ -1,22 +1,18 @@
-import serverless from 'serverless-http';
 import { app, getClientFirestoreInstance } from '../server';
 import { initTursoTables } from '../src/server/tursoDb';
 
 let initialized = false;
 
-const handler = async (event: any, context: any) => {
+export default async function handler(req: any, res: any) {
   if (!initialized) {
     try {
       getClientFirestoreInstance();
       await initTursoTables();
       initialized = true;
     } catch (e) {
-      console.error('Failed to init in Vercel serverless', e);
+      console.error('[Vercel Serverless] Failed to initialize database:', e);
     }
   }
 
-  const serverlessHandler = serverless(app);
-  return serverlessHandler(event, context);
-};
-
-export default handler;
+  return app(req, res);
+}
