@@ -2,8 +2,8 @@ import { createClient, Client } from '@libsql/client';
 import { getLevelTitle } from '../utils/levelTitles';
 import { calculateRankInfo } from '../utils/rankSystem';
 
-const rawUrl = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || process.env.LIBSQL_URL || "libsql://database-bole-fountain-vercel-icfg-wtfhxgjjiy9lmfiuh8gfv964.aws-us-east-1.turso.io";
-const rawToken = process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk2NjAyMzcsImlkIjoiMDFhMGFmZGYtZTkwMS03ZWE0LTk0MmYtZGIzNzdlMGU5NzAwIiwia2lkIjoiSS12NFl1YVl2YmpkZUFSQUgyNHpSSE1SdkZvbGNYZ08tVVdpODdneEpwSSIsInJpZCI6IjlhOTdhNzQ3LTQwYWUtNDZkMy1iN2M4LWU2ZmYwN2E4NTFkZCJ9.dksAd0P7NmO92fbLhhhu1zMsrfiETGmdkZl6OdOe-oC7gjW1AnBnxsfOyPu3YMkvI1UwJou4aFx_z0VqbF0WDQ";
+const rawUrl = process.env.TURSO_DATABASE_URL || process.env.STORAGE_URL || process.env.DATABASE_URL || process.env.LIBSQL_URL || "libsql://database-bole-fountain-vercel-icfg-wtfhxgjjiy9lmfiuh8gfv964.aws-us-east-1.turso.io";
+const rawToken = process.env.TURSO_AUTH_TOKEN || process.env.STORAGE_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk2NjAyMzcsImlkIjoiMDFhMGFmZGYtZTkwMS03ZWE0LTk0MmYtZGIzNzdlMGU5NzAwIiwia2lkIjoiSS12NFl1YVl2YmpkZUFSQUgyNHpSSE1SdkZvbGNYZ08tVVdpODdneEpwSSIsInJpZCI6IjlhOTdhNzQ3LTQwYWUtNDZkMy1iN2M4LWU2ZmYwN2E4NTFkZCJ9.dksAd0P7NmO92fbLhhhu1zMsrfiETGmdkZl6OdOe-oC7gjW1AnBnxsfOyPu3YMkvI1UwJou4aFx_z0VqbF0WDQ";
 
 const TURSO_AUTH_TOKEN = rawToken.trim().replace(/^["']|["']$/g, '');
 let TURSO_URL = rawUrl.trim().replace(/^["']|["']$/g, '');
