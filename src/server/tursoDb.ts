@@ -2,8 +2,8 @@ import { createClient, Client } from '@libsql/client';
 import { getLevelTitle } from '../utils/levelTitles';
 import { calculateRankInfo } from '../utils/rankSystem';
 
-const TURSO_URL = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || process.env.LIBSQL_URL || "libsql://farukat-alto.aws-eu-west-1.turso.io";
-const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODgyOTE0ODYsImlkIjoiMDFhMDVlNWEtMzAwMS03MTNjLTg5ZjAtMTRhMzEzNzFmNjA5Iiwia2lkIjoiNUxmOFJpWUVyamVlVUFKdzY2TGdrazdpcUw2Zng4aW8tWTBWZmhhSHctbyIsInJpZCI6ImJhMmIwMTdmLWRmOTctNGQ4OC05Y2FiLWQ2YzYyZDQ4NWZkMCJ9.296LL3-x6v43CtnxJStttF1CaTRR0u5tGbyTUmz3dgD4B_SSnaUEiGTiNiQd5BADApR4s32pGWP35I06eOrwAQ";
+const TURSO_URL = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || process.env.LIBSQL_URL || "libsql://database-bole-fountain-vercel-icfg-wtfhxgjjiy9lmfiuh8gfv964.aws-us-east-1.turso.io";
+const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk2NTcwODIsImlkIjoiMDFhMGFmZGYtZTkwMS03ZWE0LTk0MmYtZGIzNzdlMGU5NzAwIiwia2lkIjoiSS12NFl1YVl2YmpkZUFSQUgyNHpSSE1SdkZvbGNYZ08tVVdpODdneEpwSSIsInJpZCI6IjlhOTdhNzQ3LTQwYWUtNDZkMy1iN2M4LWU2ZmYwN2E4NTFkZCJ9.B8DBsSh2yC-4EA2slcESyUkkG_lGwRffYTKclCKlRbvmUOJ-5u13AUFQ_RMJu041bOljGJP1VQEbBsxrKLGvDw";
 
 let tursoClient: Client | null = null;
 let isUsingLocalFallback = false;
