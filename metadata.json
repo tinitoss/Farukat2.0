@@ -1,0 +1,6 @@
+{
+  "name": "FARUKAT",
+  "description": "FARUKAT Cinema & Series streaming platform featuring real-time AMM collectible exchange, interactive 3D digital membership pass, real XP and level progression system, and Firebase Cloud Firestore persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

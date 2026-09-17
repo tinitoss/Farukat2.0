@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Standard loose fallback for general prototype collections
+    match /{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Explicit security schemas for Watch Party structures
+    match /watch_parties/{partyId} {
+      allow read, write: if true;
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+    
+    match /scheduled_watch_parties/{partyId} {
+      allow read, write: if true;
+      match /interested_users/{userId} {
+        allow read, write: if true;
+      }
+    }
+    
+    match /saved_watch_parties/{replayId} {
+      allow read, write: if true;
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}

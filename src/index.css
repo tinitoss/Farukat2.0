@@ -1,0 +1,336 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Spacing scale */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+
+    /* Backgrounds & surfaces — only 3 steps, not 4 near-identical ones */
+    --bg-base: #050505;        /* root app background */
+    --bg-surface: #0F0F0F;     /* cards, list rows, inputs, headers */
+    --bg-elevated: #1A1A1A;    /* hover/active state, popovers, sub-panels */
+
+    /* Accent — ONE gold, used everywhere */
+    --accent-gold: #E2B14C;
+    --accent-gold-dim: #8A6A2E;   /* inactive/disabled version of the accent, same hue */
+
+    /* Text */
+    --text-primary: #F5F5F5;
+    --text-secondary: #A3A3A3;
+    --text-disabled: #666666;
+    --text-on-accent: #000000;    /* text placed on top of gold buttons */
+
+    /* Borders */
+    --border-subtle: #1F1F1F;     /* card/container outlines */
+    --border-active: #E2B14C;     /* focused input, active tab underline — reuses the accent, not a separate color */
+    --divider-hairline: rgba(255, 255, 255, 0.06);
+
+    /* Semantic status — kept distinct from the accent and from each other */
+    --status-success: #2FBF71;
+    --status-warning: #E2B14C;    /* reuses the accent — don't invent a second gold/yellow for warnings */
+    --status-danger: #D9483C;     /* one red only — see note below */
+
+    /* Functional aliases to map existing component token names to the 3-step/single-gold system */
+    --bg-main: var(--bg-base);
+    --bg-card: var(--bg-surface);
+    --bg-card-elevated: var(--bg-elevated);
+    --accent-red: var(--status-danger);
+    --accent-red-hover: var(--status-danger);
+    --text-muted: var(--text-disabled);
+    --border-elevated: var(--bg-elevated);
+    --glass-light: var(--divider-hairline);
+    --glass-medium: rgba(255, 255, 255, 0.03);
+    --accent-orange: var(--accent-gold);
+  }
+
+  .light-mode {
+    --bg-base: #f9fafb;
+    --bg-surface: #ffffff;
+    --bg-elevated: #e5e7eb;
+    --accent-gold: #E2B14C;
+    --accent-gold-dim: #8A6A2E;
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-disabled: #6b7280;
+    --text-on-accent: #000000;
+    --border-subtle: #d1d5db;
+    --border-active: #E2B14C;
+    --divider-hairline: rgba(0, 0, 0, 0.06);
+    --status-success: #2FBF71;
+    --status-warning: #E2B14C;
+    --status-danger: #D9483C;
+
+    --bg-main: var(--bg-base);
+    --bg-card: var(--bg-surface);
+    --bg-card-elevated: var(--bg-elevated);
+    --accent-red: var(--status-danger);
+    --accent-red-hover: var(--status-danger);
+    --text-muted: var(--text-disabled);
+    --border-elevated: var(--bg-elevated);
+    --glass-light: var(--divider-hairline);
+    --glass-medium: rgba(0, 0, 0, 0.03);
+    --accent-orange: var(--accent-gold);
+  }
+
+  html, body {
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: pan-x pan-y;
+    overscroll-behavior-y: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* GPU accelerated smooth scrolling */
+  .overflow-x-auto, .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  button, a {
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+  }
+
+}
+
+@layer utilities {
+  .high-contrast-mode {
+    --bg-main: #000000;
+    --bg-surface: #000000;
+    --bg-card: #000000;
+    --bg-card-elevated: #000000;
+    --text-primary: #ffffff;
+    --text-secondary: #ffffff;
+    --text-muted: #cccccc;
+    --border-subtle: #ffffff;
+    --border-elevated: #ffffff;
+  }
+  
+  .high-contrast-mode * {
+    border-color: #ffffff !important;
+  }
+  .high-contrast-mode p, .high-contrast-mode span, .high-contrast-mode h1, .high-contrast-mode h2, .high-contrast-mode h3, .high-contrast-mode h4, .high-contrast-mode h5, .high-contrast-mode h6 {
+    color: #ffffff !important;
+  }
+}
+
+/* Prevent iOS zoom on focus */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Custom Scrollbar Styles */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Keyframe Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideLeft {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.02) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite ease-in-out;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slideLeft {
+  animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes smoothSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes subtleSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 10px rgba(226, 177, 76, 0.4));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 24px rgba(226, 177, 76, 0.85));
+    transform: scale(1.03);
+  }
+}
+
+.animate-smooth-spin {
+  animation: smoothSpin 4s linear infinite;
+}
+
+.animate-subtle-spin {
+  animation: subtleSpin 1.15s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  will-change: transform;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2.4s ease-in-out infinite;
+}
+
+/* -----------------------------------------------------------------------------
+ * FPX COLLECTIBLE EXCHANGE & GLASS PANEL STYLING
+ * ----------------------------------------------------------------------------- */
+.font-playfair {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-inter {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 177, 76, 0.15);
+  border-radius: 16px;
+}
+
+.glass-panel-subtle {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--divider-hairline);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  70% { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.pulse-dot-ring::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--status-success);
+  animation: pulse-ring 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+  opacity: 0.8;
+}
+
+.flash-price-up {
+  color: var(--status-success) !important;
+  background-color: rgba(47, 191, 113, 0.15) !important;
+  transition: all 0.2s ease-in;
+}
+
+.flash-price-down {
+  color: var(--status-danger) !important;
+  background-color: rgba(217, 72, 60, 0.15) !important;
+  transition: all 0.2s ease-in;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes slowZoom {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.05);
+  }
+}
+
+.animate-slowZoom {
+  animation: slowZoom 7s ease-out forwards;
+}
+
+.animate-marquee {
+  display: inline-flex;
+  animation: marquee 35s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+

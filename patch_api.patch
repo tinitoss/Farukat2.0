@@ -1,0 +1,71 @@
+--- src/utils/xpSystem.ts
++++ src/utils/xpSystem.ts
+@@ -10,2 +10,4 @@
+ } from '../types';
++import { backendApiCall } from './api';
++import { auth } from '../firebase';
+ 
+@@ -308,2 +310,31 @@
+ 
++export const syncXpAccountWithBackend = async () => {
++  const user = auth.currentUser;
++  if (!user) return getXpAccount();
++  
++  try {
++    const data = await backendApiCall('getUserData', { 
++      uid: user.uid, 
++      email: user.email, 
++      name: user.displayName, 
++      photoURL: user.photoURL 
++    });
++    
++    if (data) {
++      const local = getXpAccount();
++      local.currentLevel = data.level;
++      local.currentXp = data.currentXp;
++      local.lifetimeXp = data.lifetimeXp;
++      local.profile.tier = data.membershipTier;
++      local.profile.cardNumber = data.cardNumber;
++      local.profile.memberId = data.memberId;
++      local.profile.signatureUrl = data.signatureUrl;
++      // Save to local cache
++      saveXpAccount(local);
++      return local;
++    }
++  } catch (err) {
++    console.error('Failed to sync XP Account with backend', err);
++  }
++  return getXpAccount();
++};
++
+ // INITIALIZE OR RETRIEVE STORED ACCOUNT
+@@ -457,4 +488,4 @@
+ // CENTRAL XP AWARD ENGINE (IMMUTABLE AUDIT LEDGER)
+-export const awardXp = (
++export const awardXp = async (
+   reason: string,
+@@ -462,3 +493,3 @@
+   category: XpTransaction['category'],
+   metadata?: Record<string, any>
+-): { account: XpAccount; leveledUp: boolean; newLevel: number; earnedAchievements: UserAchievement[] } => {
++) => {
+   if (amount <= 0) {
+@@ -470,2 +501,17 @@
+ 
++  // Backend Sync
++  const user = auth.currentUser;
++  if (user) {
++    try {
++      const data = await backendApiCall('recordXP', { uid: user.uid, reason, type: 'EARN' });
++      if (data) {
++        account.currentLevel = data.level;
++        account.currentXp = data.currentXp;
++        account.lifetimeXp = data.lifetimeXp;
++        account.profile.tier = data.membershipTier;
++      }
++    } catch (e) {
++      console.warn("Backend XP sync failed, using local calculation.", e);
++    }
++  }
++
+   // 1. Add XP Transaction

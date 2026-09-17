@@ -1,0 +1,62 @@
+--- src/utils/memberSystem.ts
++++ src/utils/memberSystem.ts
+@@ -8,2 +8,4 @@
+ import { getXpAccount, awardXp, saveXpAccount } from './xpSystem';
++import { backendApiCall } from './api';
++import { auth } from '../firebase';
+ 
+@@ -35,2 +37,18 @@
+ 
++/**
++ * Sync the community directory and follow lists from the backend
++ */
++export async function syncCommunityWithBackend() {
++  const user = auth.currentUser;
++  if (!user) return;
++  try {
++    const members = await backendApiCall('getCommunity', { uid: user.uid });
++    if (members) {
++      localStorage.setItem(COMMUNITY_MEMBERS_KEY, JSON.stringify(members));
++    }
++  } catch (err) {
++    console.warn("Failed to sync community", err);
++  }
++}
++
+ /**
+@@ -109,3 +127,3 @@
+  */
+-export function followMember(targetCardNumber: string): { success: boolean; message: string } {
++export async function followMember(targetCardNumber: string) {
+   try {
+@@ -124,3 +142,12 @@
+ 
+-    // Award community XP
+-    awardXp('Followed VIP Member', 15, 'engagement');
++    // Backend Sync
++    const user = auth.currentUser;
++    if (user) {
++      const data = await backendApiCall('followUser', { uid: user.uid, targetCardNumber });
++      if (data && data.following) {
++         localStorage.setItem(FOLLOWING_KEY, JSON.stringify(data.following));
++      }
++    } else {
++      awardXp('Followed VIP Member', 15, 'engagement');
++    }
+ 
+@@ -147,3 +174,3 @@
+  */
+-export function unfollowMember(targetCardNumber: string): { success: boolean; message: string } {
++export async function unfollowMember(targetCardNumber: string) {
+   try {
+@@ -152,2 +179,10 @@
+     localStorage.setItem(FOLLOWING_KEY, JSON.stringify(updated));
++    
++    const user = auth.currentUser;
++    if (user) {
++      const data = await backendApiCall('unfollowUser', { uid: user.uid, targetCardNumber });
++      if (data && data.following) {
++         localStorage.setItem(FOLLOWING_KEY, JSON.stringify(data.following));
++      }
++    }
+     return { success: true, message: 'Unfollowed member.' };

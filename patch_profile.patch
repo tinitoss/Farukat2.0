@@ -1,0 +1,18 @@
+--- src/utils/xpSystem.ts
++++ src/utils/xpSystem.ts
+@@ -758,2 +758,2 @@
+ 
+-export const recordProfileUpdate = (name: string, avatarUrl: string, theme?: CardTheme) => {
++export const recordProfileUpdate = async (name: string, avatarUrl: string, theme?: CardTheme) => {
+   const account = getXpAccount();
+@@ -768,2 +768,10 @@
+ 
++  // Backend Sync
++  const user = auth.currentUser;
++  if (user) {
++    backendApiCall('updateProfile', { uid: user.uid, name: name.trim(), avatarUrl: avatarUrl.trim() }).catch(e => {
++      console.error('Failed to sync profile update to backend', e);
++    });
++  }
++
+   if (!wasCompleted) {

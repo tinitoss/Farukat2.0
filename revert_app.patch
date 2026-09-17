@@ -1,0 +1,59 @@
+--- src/App.tsx
++++ src/App.tsx
+@@ -41,3 +41,2 @@
+ import { syncFirebaseUserToAccount } from './utils/memberSystem';
+-import { loadUserDataFromFirestore } from './utils/firestoreSync';
+ import { Tv, Film, Star, Play, Shield, Sparkles } from 'lucide-react';
+@@ -72,5 +71,2 @@
+ 
+-  // Firestore Permission Warning
+-  const [dbError, setDbError] = useState(false);
+-
+   // 1. Listen to Firebase Auth state
+@@ -78,11 +74,2 @@
+       if (firebaseUser) {
+-        await loadUserDataFromFirestore(firebaseUser.uid);
+         const syncedAccount = syncFirebaseUserToAccount(firebaseUser);
+         setAccount(syncedAccount);
+-        
+-        // Refresh local state arrays after firestore sync
+-        setWatchlist(getStoredWatchlist());
+-        setLikes(getStoredLikes());
+-        setHistory(getWatchHistory());
+-        setDownloads(getDownloadedIds());
+-        setRatings(getUserRatings());
+ 
+@@ -115,10 +102,3 @@
+ 
+-    // Listen for Firestore permission errors
+-    const handleDbError = () => setDbError(true);
+-    window.addEventListener('firestore-permission-error', handleDbError);
+-
+-    return () => {
+-      unsubscribeXp();
+-      window.removeEventListener('firestore-permission-error', handleDbError);
+-    };
++    return () => unsubscribeXp();
+   }, []);
+@@ -128,11 +108,2 @@
+   const handleAuthSuccess = async (user: User) => {
+-    await loadUserDataFromFirestore(user.uid);
+     const syncedAccount = syncFirebaseUserToAccount(user);
+     setAccount(syncedAccount);
+-    
+-    // Refresh local state arrays after firestore sync
+-    setWatchlist(getStoredWatchlist());
+-    setLikes(getStoredLikes());
+-    setHistory(getWatchHistory());
+-    setDownloads(getDownloadedIds());
+-    setRatings(getUserRatings());
+ 
+@@ -219,7 +190,2 @@
+ 
+-      {dbError && (
+-        <div className="bg-[#e2b14c] text-black px-4 py-2.5 flex items-center justify-center gap-2 text-xs font-bold shadow-lg z-50">
+-          <Shield className="w-4 h-4" />
+-          <span>Firestore Rules are blocking access. App is running in Local Mode. Please update rules in Firebase Console.</span>
+-        </div>
+-      )}
+-

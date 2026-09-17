@@ -1,0 +1,81 @@
+--- src/components/MembershipCardModal.tsx
++++ src/components/MembershipCardModal.tsx
+@@ -10,2 +10,4 @@
+ import { X, Download, Share, UserPlus, Check, Search, Shield, Zap, Edit3, ShieldAlert, LogOut } from 'lucide-react';
++import SignatureCanvas from 'react-signature-canvas';
++import { backendApiCall } from '../utils/api';
+ 
+@@ -109,2 +111,4 @@
+   const [selectedTheme, setSelectedTheme] = useState<CardTheme>(account.profile.cardTheme || 'ivory-gold');
++  const sigCanvas = useRef<any>(null);
++  const [isSavingProfile, setIsSavingProfile] = useState(false);
+ 
+@@ -257,7 +261,26 @@
+   // Edit Profile
+-  const handleSaveProfile = (e: React.FormEvent) => {
++  const handleSaveProfile = async (e: React.FormEvent) => {
+     e.preventDefault();
+-    recordProfileUpdate(editName, editAvatar, selectedTheme);
+-    syncCurrentUserToDirectory();
+-    onUpdateAccount();
+-    setActiveTab('card');
++    setIsSavingProfile(true);
++    try {
++      let signatureUrl = account.profile.signatureUrl;
++      if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
++        const base64Image = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
++        const user = auth.currentUser;
++        if (user) {
++          const res = await backendApiCall('saveSignature', { uid: user.uid, base64Image });
++          if (res && res.signatureUrl) {
++             signatureUrl = res.signatureUrl;
++             account.profile.signatureUrl = signatureUrl;
++          }
++        }
++      }
++      await recordProfileUpdate(editName, editAvatar, selectedTheme);
++      syncCurrentUserToDirectory();
++      onUpdateAccount();
++      setActiveTab('card');
++    } catch (e) {
++      console.error(e);
++    } finally {
++      setIsSavingProfile(false);
++    }
+   };
+@@ -628,4 +651,9 @@
+                           <div className="flex-1 bg-[#eaeaea] border border-white/40 rounded h-7 flex items-center justify-between px-3 overflow-hidden shadow-inner">
+-                            <span className="font-serif italic font-bold text-xs text-[#111] tracking-wide select-none">
+-                              {account.profile.name}
+-                            </span>
++                            {account.profile.signatureUrl ? (
++                              <img src={account.profile.signatureUrl} alt="Signature" className="h-6 object-contain" />
++                            ) : (
++                              <span className="font-serif italic font-bold text-xs text-[#111] tracking-wide select-none">
++                                {account.profile.name}
++                              </span>
++                            )}
+                             <span className="text-[8px] font-mono font-bold text-[#666] uppercase tracking-tighter">
+@@ -1071,2 +1099,15 @@
+ 
++              <div className="flex flex-col gap-1.5">
++                <label className="text-xs font-bold text-[#aaa]">Authorized Signature</label>
++                <div className="bg-[#eaeaea] border border-[#282828] rounded-xl overflow-hidden relative" style={{ height: '100px' }}>
++                  <SignatureCanvas
++                    ref={sigCanvas}
++                    penColor="black"
++                    canvasProps={{ className: 'w-full h-full cursor-crosshair' }}
++                  />
++                  <button type="button" onClick={() => sigCanvas.current?.clear()} className="absolute top-1 right-2 text-[10px] text-black font-bold opacity-50 hover:opacity-100">Clear</button>
++                </div>
++                <p className="text-[10px] text-[#777]">Sign using your finger or mouse. This will be displayed on your digital card.</p>
++              </div>
++
+               <button
+@@ -1074,4 +1115,5 @@
+                 className="mt-2 py-3 rounded-xl bg-[#e2b14c] text-black font-black text-xs hover:brightness-110 transition cursor-pointer"
++                disabled={isSavingProfile}
+               >
+-                Save Card Profile
++                {isSavingProfile ? 'Saving...' : 'Save Card Profile'}
+               </button>

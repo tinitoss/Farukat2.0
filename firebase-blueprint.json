@@ -1,0 +1,193 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile, XP, level progression, and stats",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "currentXp": { "type": "number" },
+        "lifetimeXp": { "type": "number" },
+        "currentLevel": { "type": "number" },
+        "xpSpentTotal": { "type": "number" },
+        "profile": { "type": "object" },
+        "stats": { "type": "object" },
+        "transactions": { "type": "array" },
+        "achievements": { "type": "array" }
+      },
+      "required": ["userId", "currentXp", "lifetimeXp", "currentLevel"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Media discussion comment",
+      "type": "object",
+      "properties": {
+        "mediaId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["mediaId", "userId", "text"]
+    },
+    "Like": {
+      "title": "Like",
+      "description": "User content like",
+      "type": "object",
+      "properties": {
+        "mediaId": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["mediaId", "userId"]
+    },
+    "Watchlist": {
+      "title": "Watchlist",
+      "description": "User saved watchlist collection",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "mediaIds": { "type": "array" }
+      },
+      "required": ["userId", "mediaIds"]
+    },
+    "MarketItem": {
+      "title": "MarketItem",
+      "description": "Store item or collectible",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "iconName": { "type": "string" },
+        "themeColor": { "type": "string" },
+        "faraPrice": { "type": "number" },
+        "rarity": { "type": "string" },
+        "category": { "type": "string" },
+        "published": { "type": "boolean" }
+      },
+      "required": ["name", "faraPrice", "category"]
+    },
+    "WatchInvite": {
+      "title": "WatchInvite",
+      "description": "Watch together invitation between mutual members",
+      "type": "object",
+      "properties": {
+        "hostUid": { "type": "string" },
+        "guestUid": { "type": "string" },
+        "hostName": { "type": "string" },
+        "hostAvatar": { "type": "string" },
+        "mediaId": { "type": "string" },
+        "episodeId": { "type": "string" },
+        "mediaTitle": { "type": "string" },
+        "mediaThumbnail": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["hostUid", "guestUid", "mediaId", "mediaTitle", "status"]
+    },
+    "WatchParty": {
+      "title": "WatchParty",
+      "description": "Synchronized real-time watch together room",
+      "type": "object",
+      "properties": {
+        "partyId": { "type": "string" },
+        "hostUid": { "type": "string" },
+        "guestUid": { "type": "string" },
+        "hostName": { "type": "string" },
+        "guestName": { "type": "string" },
+        "hostAvatar": { "type": "string" },
+        "guestAvatar": { "type": "string" },
+        "mediaId": { "type": "string" },
+        "episodeId": { "type": "string" },
+        "mediaTitle": { "type": "string" },
+        "mediaThumbnail": { "type": "string" },
+        "status": { "type": "string" },
+        "playerState": { "type": "object" },
+        "createdAt": { "type": "number" },
+        "isPublic": { "type": "boolean" },
+        "viewers": { "type": "array" }
+      },
+      "required": ["partyId", "hostUid", "guestUid", "mediaId", "mediaTitle", "status"]
+    },
+    "ScheduledWatchParty": {
+      "title": "ScheduledWatchParty",
+      "description": "Watch party scheduled for a future date and time",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "hostUid": { "type": "string" },
+        "hostName": { "type": "string" },
+        "hostAvatar": { "type": "string" },
+        "mediaId": { "type": "string" },
+        "episodeId": { "type": "string" },
+        "mediaTitle": { "type": "string" },
+        "mediaThumbnail": { "type": "string" },
+        "scheduledTime": { "type": "number" },
+        "isPublic": { "type": "boolean" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "interestedUids": { "type": "array" }
+      },
+      "required": ["id", "hostUid", "mediaId", "mediaTitle", "scheduledTime", "status"]
+    },
+    "SavedWatchParty": {
+      "title": "SavedWatchParty",
+      "description": "Saved party replay with synchronized comments log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "partyId": { "type": "string" },
+        "mediaId": { "type": "string" },
+        "episodeId": { "type": "string" },
+        "mediaTitle": { "type": "string" },
+        "mediaThumbnail": { "type": "string" },
+        "hostName": { "type": "string" },
+        "hostAvatar": { "type": "string" },
+        "savedAt": { "type": "number" },
+        "duration": { "type": "number" }
+      },
+      "required": ["id", "partyId", "mediaId", "mediaTitle", "savedAt", "duration"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile, XP levels, and progression records"
+    },
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Public comments and community feedback"
+    },
+    "/likes/{likeId}": {
+      "schema": "Like",
+      "description": "User media likes"
+    },
+    "/watchlists/{userId}": {
+      "schema": "Watchlist",
+      "description": "User customized watchlists"
+    },
+    "/marketItems/{itemId}": {
+      "schema": "MarketItem",
+      "description": "Global market collectibles and items"
+    },
+    "/watch_invites/{inviteId}": {
+      "schema": "WatchInvite",
+      "description": "Pending and past watch together invitations"
+    },
+    "/watch_parties/{partyId}": {
+      "schema": "WatchParty",
+      "description": "Active watch party sync rooms"
+    },
+    "/scheduled_watch_parties/{scheduledId}": {
+      "schema": "ScheduledWatchParty",
+      "description": "Scheduled future watch parties"
+    },
+    "/saved_watch_parties/{replayId}": {
+      "schema": "SavedWatchParty",
+      "description": "Saved party replays"
+    }
+  }
+}
