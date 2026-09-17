@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: farukat-app
+    env: node
+    buildCommand: npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TURSO_DATABASE_URL
+        value: libsql://database-bole-fountain-vercel-icfg-wtfhxgjjiy9lmfiuh8gfv964.aws-us-east-1.turso.io
+      - key: TURSO_AUTH_TOKEN
+        value: eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk2NzIzMDYsImlkIjoiMDFhMGFmZGYtZTkwMS03ZWE0LTk0MmYtZGIzNzdlMGU5NzAwIiwia2lkIjoiSS12NFl1YVl2YmpkZUFSQUgyNHpSSE1SdkZvbGNYZ08tVVdpODdneEpwSSIsInJpZCI6IjlhOTdhNzQ3LTQwYWUtNDZkMy1iN2M4LWU2ZmYwN2E4NTFkZCJ9.smbyj94XyW6Ope6EdhfxIe2a8Tg3Y_c5KEZymuwySVumMazh5rHi2iZtGSFbTmCVWHxDSKjjOHPLldanhBOfDw

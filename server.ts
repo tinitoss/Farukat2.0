@@ -189,7 +189,7 @@ function getAdminFirestore() {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID || '195kDKDJoWckJ_A85TtbnVgTL8aG-5npsYklfXe1EA4w';
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
