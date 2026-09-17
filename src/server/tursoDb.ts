@@ -2,8 +2,8 @@ import { createClient, Client } from '@libsql/client';
 import { getLevelTitle } from '../utils/levelTitles';
 import { calculateRankInfo } from '../utils/rankSystem';
 
-const TURSO_URL = process.env.TURSO_DATABASE_URL || "libsql://farukat-alto.aws-eu-west-1.turso.io";
-const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODgyOTE0ODYsImlkIjoiMDFhMDVlNWEtMzAwMS03MTNjLTg5ZjAtMTRhMzEzNzFmNjA5Iiwia2lkIjoiNUxmOFJpWUVyamVlVUFKdzY2TGdrazdpcUw2Zng4aW8tWTBWZmhhSHctbyIsInJpZCI6ImJhMmIwMTdmLWRmOTctNGQ4OC05Y2FiLWQ2YzYyZDQ4NWZkMCJ9.296LL3-x6v43CtnxJStttF1CaTRR0u5tGbyTUmz3dgD4B_SSnaUEiGTiNiQd5BADApR4s32pGWP35I06eOrwAQ";
+const TURSO_URL = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || process.env.LIBSQL_URL || "libsql://farukat-alto.aws-eu-west-1.turso.io";
+const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODgyOTE0ODYsImlkIjoiMDFhMDVlNWEtMzAwMS03MTNjLTg5ZjAtMTRhMzEzNzFmNjA5Iiwia2lkIjoiNUxmOFJpWUVyamVlVUFKdzY2TGdrazdpcUw2Zng4aW8tWTBWZmhhSHctbyIsInJpZCI6ImJhMmIwMTdmLWRmOTctNGQ4OC05Y2FiLWQ2YzYyZDQ4NWZkMCJ9.296LL3-x6v43CtnxJStttF1CaTRR0u5tGbyTUmz3dgD4B_SSnaUEiGTiNiQd5BADApR4s32pGWP35I06eOrwAQ";
 
 let tursoClient: Client | null = null;
 let isUsingLocalFallback = false;
