@@ -274,9 +274,33 @@ async function deleteSheetRow(sheets: any, sheetName: string, rowIndex: number) 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors({
-  origin: '*', 
-  credentials: true
+  origin: true, 
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-google-token']
 }));
+
+// URL Normalizer for Serverless Deployments (Vercel & Netlify)
+app.use((req, res, next) => {
+  if (req.url) {
+    if (req.url.startsWith('/.netlify/functions/api')) {
+      req.url = req.url.replace('/.netlify/functions/api', '/api');
+    }
+    if (!req.url.startsWith('/api/') && req.url !== '/api') {
+      if (
+        req.url.startsWith('/turso') ||
+        req.url.startsWith('/userdata') ||
+        req.url.startsWith('/social') ||
+        req.url.startsWith('/xp') ||
+        req.url.startsWith('/leaderboard') ||
+        req.url.startsWith('/auth')
+      ) {
+        req.url = '/api' + (req.url.startsWith('/') ? '' : '/') + req.url;
+      }
+    }
+  }
+  next();
+});
 
 // Add security headers
 app.use((req, res, next) => {

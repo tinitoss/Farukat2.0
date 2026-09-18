@@ -183,10 +183,11 @@ export async function getTursoUserLikes() {
 
 export async function toggleTursoLike(contentId: string) {
   const headers = await getAuthHeaders();
+  const userId = auth.currentUser?.uid;
   const res = await fetch('/api/turso/likes/toggle', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ contentId })
+    body: JSON.stringify({ contentId, userId })
   });
   if (!res.ok) throw new Error('Failed to toggle like');
   return res.json();
@@ -221,10 +222,11 @@ export async function addTursoComment(
   parentCommentId?: string | null
 ) {
   const headers = await getAuthHeaders();
+  const userId = auth.currentUser?.uid;
   const res = await fetch('/api/turso/comments/add', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ contentId, text, username, avatar, parentCommentId })
+    body: JSON.stringify({ contentId, text, username, avatar, parentCommentId, userId })
   });
   if (!res.ok) throw new Error('Failed to post comment');
   return res.json();

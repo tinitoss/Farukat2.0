@@ -1,4 +1,4 @@
-import { createClient, Client } from '@libsql/client';
+import { createClient, Client } from '@libsql/client/http';
 import { getLevelTitle } from '../utils/levelTitles';
 import { calculateRankInfo } from '../utils/rankSystem';
 
