@@ -1,37 +1,39 @@
-import { createClient, Client } from '@libsql/client';
+// Use the web entry point: the default '@libsql/client' export statically requires the
+// native `libsql` binary (for local-file/embedded-replica support), which cannot be
+// bundled into a Netlify Function. The web client speaks plain HTTP to remote Turso.
+import { createClient, Client } from '@libsql/client/web';
 import { getLevelTitle } from '../utils/levelTitles';
 import { calculateRankInfo } from '../utils/rankSystem';
 
-const rawUrl = process.env.TURSO_DATABASE_URL || process.env.STORAGE_URL || process.env.DATABASE_URL || process.env.LIBSQL_URL || "libsql://database-bole-fountain-vercel-icfg-wtfhxgjjiy9lmfiuh8gfv964.aws-us-east-1.turso.io";
-const rawToken = process.env.TURSO_AUTH_TOKEN || process.env.STORAGE_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk2NzIzMDYsImlkIjoiMDFhMGFmZGYtZTkwMS03ZWE0LTk0MmYtZGIzNzdlMGU5NzAwIiwia2lkIjoiSS12NFl1YVl2YmpkZUFSQUgyNHpSSE1SdkZvbGNYZ08tVVdpODdneEpwSSIsInJpZCI6IjlhOTdhNzQ3LTQwYWUtNDZkMy1iN2M4LWU2ZmYwN2E4NTFkZCJ9.smbyj94XyW6Ope6EdhfxIe2a8Tg3Y_c5KEZymuwySVumMazh5rHi2iZtGSFbTmCVWHxDSKjjOHPLldanhBOfDw";
+const TURSO_URL_RAW = (process.env.TURSO_DATABASE_URL || '').trim().replace(/^["']|["']$/g, '');
+const TURSO_AUTH_TOKEN = (process.env.TURSO_AUTH_TOKEN || '').trim().replace(/^["']|["']$/g, '');
 
-const TURSO_AUTH_TOKEN = rawToken.trim().replace(/^["']|["']$/g, '');
-let cleanUrl = rawUrl.trim().replace(/^["']|["']$/g, '');
-// Use https:// for remote Turso on serverless / Vercel to avoid WebSocket connection drops
-if (cleanUrl.startsWith('libsql://')) {
-  cleanUrl = cleanUrl.replace('libsql://', 'https://');
-}
-const TURSO_URL = cleanUrl;
+// Netlify Functions have no persistent filesystem, so embedded replicas and local
+// SQLite files cannot be used here - every request must talk to the remote Turso
+// database. Normalise libsql:// to https:// as well: libsql:// opens a WebSocket
+// connection, which gets torn down between serverless invocations.
+const TURSO_URL = TURSO_URL_RAW.startsWith('libsql://')
+  ? TURSO_URL_RAW.replace('libsql://', 'https://')
+  : TURSO_URL_RAW;
 
-const localDbPath = process.env.VERCEL || process.env.NETLIFY ? "file:/tmp/local_turso.db" : "file:local_turso.db";
-
+// Single shared client for the lifetime of the function instance. Creating a client
+// per request would open a new connection pool on every invocation.
 let tursoClient: Client | null = null;
-let isUsingLocalFallback = false;
 
 export function getTursoClient(): Client {
   if (!tursoClient) {
-    const hasToken = Boolean(TURSO_AUTH_TOKEN && TURSO_AUTH_TOKEN.trim().length > 0);
-    const targetUrl = hasToken ? TURSO_URL : localDbPath;
-
-    if (!hasToken) {
-      console.log(`[Turso DB] TURSO_AUTH_TOKEN not found. Using local SQLite database (${localDbPath})...`);
-    } else {
-      console.log(`[Turso DB] Connecting to Turso database at ${TURSO_URL}...`);
+    if (!TURSO_URL || !TURSO_AUTH_TOKEN) {
+      throw new Error(
+        '[Turso DB] Missing database credentials. Both TURSO_DATABASE_URL and ' +
+        'TURSO_AUTH_TOKEN must be set in the deployment environment.'
+      );
     }
 
+    console.log('[Turso DB] Connecting to remote Turso database over HTTPS...');
+
     tursoClient = createClient({
-      url: targetUrl,
-      authToken: hasToken ? TURSO_AUTH_TOKEN : undefined,
+      url: TURSO_URL,
+      authToken: TURSO_AUTH_TOKEN,
     });
   }
   return tursoClient;
@@ -2116,7 +2118,6 @@ export async function processReferralSignup(params: {
 
 
 export async function saveUserFcmToken(userId: string, token: string): Promise<void> {
-  if (isUsingLocalFallback) return; // Prevent saving in guest mode
   try {
     const client = getTursoClient();
     await client.execute({
@@ -2131,7 +2132,6 @@ export async function saveUserFcmToken(userId: string, token: string): Promise<v
 }
 
 export async function getUserFcmToken(userId: string): Promise<string | null> {
-  if (isUsingLocalFallback) return null;
   try {
     const client = getTursoClient();
     const res = await client.execute({

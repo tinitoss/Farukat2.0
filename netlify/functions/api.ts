@@ -2,20 +2,27 @@ import serverless from 'serverless-http';
 import { app, getClientFirestoreInstance } from '../../server';
 import { initTursoTables } from '../../src/server/tursoDb';
 
-let initialized = false;
+// Wrap the Express app once per function instance rather than on every request.
+const serverlessHandler = serverless(app);
 
-const handler = async (event: any, context: any) => {
-  if (!initialized) {
-    try {
+let initPromise: Promise<void> | null = null;
+
+function ensureInitialized(): Promise<void> {
+  if (!initPromise) {
+    initPromise = (async () => {
       getClientFirestoreInstance();
       await initTursoTables();
-      initialized = true;
-    } catch (e) {
-      console.error('Failed to init in serverless', e);
-    }
+    })().catch((e) => {
+      console.error('[Netlify Function] Failed to initialize database:', e);
+      // Clear the cache so a later invocation can retry instead of staying broken.
+      initPromise = null;
+    });
   }
-  
-  const serverlessHandler = serverless(app);
+  return initPromise;
+}
+
+const handler = async (event: any, context: any) => {
+  await ensureInitialized();
   return serverlessHandler(event, context);
 };
 
