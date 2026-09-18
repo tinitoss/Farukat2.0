@@ -181,7 +181,7 @@ export function toggleStoredWatchlist(id: string, current: string[], explicitUid
   return updated;
 }
 
-export function toggleStoredLike(id: string, current: string[], explicitUid?: string): string[] {
+export function toggleStoredLike(id: string, current: string[], explicitUid?: string, skipDbSync = false): string[] {
   const exists = current.includes(id);
   const updated = exists ? current.filter(item => item !== id) : [...current, id];
   const userId = getActiveUserId(explicitUid);
@@ -189,7 +189,9 @@ export function toggleStoredLike(id: string, current: string[], explicitUid?: st
     try {
       localStorage.setItem(`farukat_likes_${userId}`, JSON.stringify(updated));
     } catch {}
-    toggleLikeInDb(id, userId).catch(err => console.error("Error toggling like in Firebase", err));
+    if (!skipDbSync) {
+      toggleLikeInDb(id, userId).catch(err => console.error("Error toggling like in DB", err));
+    }
   }
   return updated;
 }

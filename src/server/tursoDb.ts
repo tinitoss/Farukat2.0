@@ -90,6 +90,15 @@ export async function initTursoTables(): Promise<boolean> {
 
       CREATE INDEX IF NOT EXISTS idx_xp_tx_user_created ON xp_transactions(user_id, created_at DESC);
 
+      CREATE TABLE IF NOT EXISTS content_stats (
+        content_id TEXT PRIMARY KEY,
+        like_count INTEGER DEFAULT 0,
+        comment_count INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_content_stats_id ON content_stats(content_id);
+
       CREATE TABLE IF NOT EXISTS likes (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -979,19 +988,49 @@ export function isSpecialAdminUser(userId?: string, userEmail?: string): boolean
 }
 
 /**
- * Likes Toggle and Queries
+ * Content Denormalized Stats (like_count & comment_count)
  */
-export async function getContentLikes(contentId: string, userId?: string) {
+export async function getContentStats(contentId: string, userId?: string) {
   const client = getTursoClient();
 
-  const countRes = await client.execute({
-    sql: `SELECT COUNT(*) as cnt FROM likes WHERE content_id = ?`,
-    args: [contentId]
-  });
+  let likeCount = 0;
+  let commentCount = 0;
 
-  const count = Number(countRes.rows[0]?.cnt || 0);
+  try {
+    const statsRes = await client.execute({
+      sql: `SELECT like_count, comment_count FROM content_stats WHERE content_id = ?`,
+      args: [contentId]
+    });
+
+    if (statsRes.rows.length > 0) {
+      likeCount = Math.max(0, Number(statsRes.rows[0].like_count || 0));
+      commentCount = Math.max(0, Number(statsRes.rows[0].comment_count || 0));
+    } else {
+      // Seed content_stats row if it doesn't exist yet
+      const [likesRes, commentsRes] = await Promise.all([
+        client.execute({ sql: `SELECT COUNT(*) as cnt FROM likes WHERE content_id = ?`, args: [contentId] }),
+        client.execute({ sql: `SELECT COUNT(*) as cnt FROM comments WHERE content_id = ? AND is_deleted = 0`, args: [contentId] })
+      ]);
+      likeCount = Number(likesRes.rows[0]?.cnt || 0);
+      commentCount = Number(commentsRes.rows[0]?.cnt || 0);
+
+      try {
+        await client.execute({
+          sql: `INSERT INTO content_stats (content_id, like_count, comment_count, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(content_id) DO UPDATE SET like_count = ?, comment_count = ?`,
+          args: [contentId, likeCount, commentCount, likeCount, commentCount]
+        });
+      } catch (_seedErr) {}
+    }
+  } catch (_err) {
+    // Fallback if content_stats table query fails
+    const countRes = await client.execute({
+      sql: `SELECT COUNT(*) as cnt FROM likes WHERE content_id = ?`,
+      args: [contentId]
+    });
+    likeCount = Number(countRes.rows[0]?.cnt || 0);
+  }
+
   let userLiked = false;
-
   if (userId) {
     const userRes = await client.execute({
       sql: `SELECT id FROM likes WHERE user_id = ? AND content_id = ?`,
@@ -1003,12 +1042,21 @@ export async function getContentLikes(contentId: string, userId?: string) {
   return {
     contentId,
     content_id: contentId,
-    likesCount: count,
-    likes_count: count,
+    likesCount: likeCount,
+    likes_count: likeCount,
+    commentsCount: commentCount,
+    comments_count: commentCount,
     userLiked,
     isLiked: userLiked,
     liked: userLiked
   };
+}
+
+/**
+ * Likes Toggle and Queries
+ */
+export async function getContentLikes(contentId: string, userId?: string) {
+  return await getContentStats(contentId, userId);
 }
 
 export async function getUserLikedContentIds(userId: string): Promise<string[]> {
@@ -1059,6 +1107,13 @@ export async function toggleLike(contentId: string, userId: string) {
       sql: `DELETE FROM likes WHERE user_id = ? AND content_id = ?`,
       args: [userId, contentId]
     });
+    try {
+      await client.execute({
+        sql: `INSERT INTO content_stats (content_id, like_count, comment_count, updated_at) VALUES (?, 0, 0, CURRENT_TIMESTAMP)
+              ON CONFLICT(content_id) DO UPDATE SET like_count = MAX(0, like_count - 1), updated_at = CURRENT_TIMESTAMP`,
+        args: [contentId]
+      });
+    } catch (_err) {}
     active = false;
   } else {
     const likeId = 'like_' + userId + '_' + contentId;
@@ -1066,22 +1121,30 @@ export async function toggleLike(contentId: string, userId: string) {
       sql: `INSERT OR IGNORE INTO likes (id, user_id, content_id) VALUES (?, ?, ?)`,
       args: [likeId, userId, contentId]
     });
+    try {
+      await client.execute({
+        sql: `INSERT INTO content_stats (content_id, like_count, comment_count, updated_at) VALUES (?, 1, 0, CURRENT_TIMESTAMP)
+              ON CONFLICT(content_id) DO UPDATE SET like_count = like_count + 1, updated_at = CURRENT_TIMESTAMP`,
+        args: [contentId]
+      });
+    } catch (_err) {}
     active = true;
   }
 
-  const updatedInfo = await getContentLikes(contentId, userId);
+  const updatedInfo = await getContentStats(contentId, userId);
   return {
     active,
     liked: active,
     isLiked: active,
-    likesCount: updatedInfo.likesCount
+    likesCount: updatedInfo.likesCount,
+    commentsCount: updatedInfo.commentsCount
   };
 }
 
 /**
  * Comments CRUD & Incremental Sync (with Turso per-user comment likes tracking)
  */
-export async function getCommentsForContent(contentId: string, currentUserId?: string, since?: string, limit = 50, offset = 0) {
+export async function getCommentsForContent(contentId: string, currentUserId?: string, since?: string, limit = 10, offset = 0) {
   const client = getTursoClient();
   const requestingUserId = currentUserId || '';
 
@@ -1182,6 +1245,15 @@ export async function createComment(
     }
   }
 
+  // Atomically increment comment_count on content_stats
+  try {
+    await client.execute({
+      sql: `INSERT INTO content_stats (content_id, like_count, comment_count, updated_at) VALUES (?, 0, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(content_id) DO UPDATE SET comment_count = comment_count + 1, updated_at = CURRENT_TIMESTAMP`,
+      args: [contentId]
+    });
+  } catch (_statsErr) {}
+
   // Award 15 XP for review comment or reply
   try {
     const xpAction = parentId ? 'Shared Cinema Review Reply' : 'Shared Cinema Review Comment';
@@ -1252,10 +1324,32 @@ export async function createComment(
 export async function deleteComment(commentId: string, userId: string) {
   const client = getTursoClient();
 
+  // Find content_id before marking comment as deleted
+  let contentId = '';
+  try {
+    const check = await client.execute({
+      sql: `SELECT content_id FROM comments WHERE id = ?`,
+      args: [commentId]
+    });
+    if (check.rows.length > 0) {
+      contentId = String(check.rows[0].content_id || '');
+    }
+  } catch (_err) {}
+
   const res = await client.execute({
     sql: `UPDATE comments SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
     args: [commentId, userId]
   });
+
+  if (res.rowsAffected > 0 && contentId) {
+    try {
+      await client.execute({
+        sql: `INSERT INTO content_stats (content_id, like_count, comment_count, updated_at) VALUES (?, 0, 0, CURRENT_TIMESTAMP)
+              ON CONFLICT(content_id) DO UPDATE SET comment_count = MAX(0, comment_count - 1), updated_at = CURRENT_TIMESTAMP`,
+        args: [contentId]
+      });
+    } catch (_statsErr) {}
+  }
 
   return res.rowsAffected > 0;
 }

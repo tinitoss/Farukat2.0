@@ -3,6 +3,7 @@ export const en = {
     appName: "FARUKAT Cinema",
     welcome: "Welcome",
     welcomeUser: "Welcome {{name}}",
+    welcomeBackUser: "Welcome back, {{name}}",
     guest: "Guest",
     home: "Home",
     movies: "Movies",

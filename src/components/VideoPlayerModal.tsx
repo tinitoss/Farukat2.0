@@ -113,7 +113,7 @@ interface VideoPlayerModalProps {
   watchlist?: string[];
   onToggleWatchlist?: (id: string) => void;
   likes?: string[];
-  onToggleLike?: (id: string) => void;
+  onToggleLike?: (id: string, skipDbSync?: boolean) => void;
   downloads?: string[];
   onToggleDownload?: (id: string) => void;
   account?: XpAccount;
@@ -237,6 +237,8 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
   // SheetDB persistent comments
   const [dbComments, setDbComments] = useState<SheetDbComment[]>([]);
+  const [hasMoreComments, setHasMoreComments] = useState<boolean>(false);
+  const [isLoadingMoreComments, setIsLoadingMoreComments] = useState<boolean>(false);
   const [isCommentsLoading, setIsCommentsLoading] = useState<boolean>(true);
   const [isCommentSubmitting, setIsCommentSubmitting] = useState<boolean>(false);
   const [commentError, setCommentError] = useState<string | null>(null);
@@ -257,12 +259,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       try {
         const [likesRes, commentsRes] = await Promise.all([
           fetchLikesForContent(contentId, userId),
-          fetchCommentsForContent(contentId, userId, true)
+          fetchCommentsForContent(contentId, userId, true, 10, 0)
         ]);
         if (isMounted) {
           setDbLikesCount(likesRes.likesCount || 0);
           setDbUserLiked(Boolean(likesRes.userLiked));
           setDbComments(commentsRes || []);
+          setHasMoreComments(Boolean((commentsRes as any)?.hasMore));
 
           // Deep-link to comment or activate reply mode if opened from notification
           if (initialTargetCommentId && commentsRes && commentsRes.length > 0) {
@@ -1155,35 +1158,57 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   };
 
   // Toggle SheetDB Like for active content item
-  const handleToggleLikeDb = async () => {
+  const handleToggleLikeDb = () => {
     if (isGuest) {
       setLikeError('Sign in to like content.');
       setTimeout(() => setLikeError(null), 3000);
       return;
     }
-    if (isLikeTransitioning) return;
-    setIsLikeTransitioning(true);
     setLikeError(null);
 
     const previousLiked = dbUserLiked;
     const previousCount = dbLikesCount;
-    
-    // Optimistic UI update
-    setDbUserLiked(!previousLiked);
-    setDbLikesCount((prev) => previousLiked ? Math.max(0, prev - 1) : prev + 1);
 
-    try {
-      const result = await toggleLikeInDb(contentId, userId);
+    const nextLiked = !previousLiked;
+    const nextCount = nextLiked ? previousCount + 1 : Math.max(0, previousCount - 1);
+
+    // Optimistic UI update instantly
+    setDbUserLiked(nextLiked);
+    setDbLikesCount(nextCount);
+
+    toggleLikeInDb(contentId, userId).then((result) => {
       setDbUserLiked(result.active);
       setDbLikesCount(result.likesCount);
-    } catch (err) {
-      // Revert optimistic update on failure
+      if (onToggleLike) {
+        onToggleLike(contentId, true);
+      }
+    }).catch(() => {
+      // Revert on failure
       setDbUserLiked(previousLiked);
       setDbLikesCount(previousCount);
       setLikeError('Could not sync like. Please try again.');
       setTimeout(() => setLikeError(null), 3000);
+    });
+  };
+
+  // Load more comments for pagination
+  const handleLoadMoreComments = async () => {
+    if (isLoadingMoreComments) return;
+    setIsLoadingMoreComments(true);
+    try {
+      const nextBatch = await fetchCommentsForContent(contentId, userId, true, 10, dbComments.length);
+      if (nextBatch && nextBatch.length > 0) {
+        setDbComments((prev) => {
+          const existingIds = new Set(prev.map((c) => c.commentId));
+          const filteredNew = nextBatch.filter((c) => !existingIds.has(c.commentId));
+          return [...prev, ...filteredNew];
+        });
+      }
+      setHasMoreComments(Boolean((nextBatch as any)?.hasMore));
+    } catch (err) {
+      console.warn('[Social] Load more comments error:', err);
     } finally {
-      setIsLikeTransitioning(false);
+      setIsLoadingMoreComments(false);
     }
   };
 
@@ -2152,7 +2177,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     </div>
                   ) : (
                     <>
-                      {(showAllComments ? topLevelComments : topLevelComments.slice(0, 10)).map((c) => {
+                      {topLevelComments.map((c) => {
                         const isMyComment = c.userId === userId;
                         const isTransitioning = Boolean(commentLikeTransitions[c.commentId]);
                         const replies = repliesByParent.get(c.commentId) || [];
@@ -2468,15 +2493,16 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                         );
                       })}
 
-                      {/* Show More / Show Less Button if > 10 comments */}
-                      {topLevelComments.length > 10 && (
+                      {/* Load More Comments Button */}
+                      {hasMoreComments && (
                         <button
                           type="button"
-                          onClick={() => setShowAllComments(!showAllComments)}
-                          className="w-full py-2.5 mt-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-[#e2b14c] transition cursor-pointer flex items-center justify-center gap-1.5 min-h-[40px]"
+                          disabled={isLoadingMoreComments}
+                          onClick={handleLoadMoreComments}
+                          className="w-full py-2.5 mt-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-[#e2b14c] transition cursor-pointer flex items-center justify-center gap-1.5 min-h-[40px] disabled:opacity-50"
                         >
-                          <span>{showAllComments ? 'Show Top 10 Only' : `Show More Comments (${topLevelComments.length - 10} more)`}</span>
-                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAllComments ? 'rotate-180' : ''}`} />
+                          <span>{isLoadingMoreComments ? 'Loading comments...' : 'Load More Comments'}</span>
+                          <ChevronDown className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </>

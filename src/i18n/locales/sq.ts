@@ -3,6 +3,7 @@ export const sq = {
     appName: "FARUKAT Cinema",
     welcome: "Mirë se vini",
     welcomeUser: "Mirë se vini {{name}}",
+    welcomeBackUser: "Mirë se vini përsëri, {{name}}",
     guest: "Vizitor",
     home: "Kreu",
     movies: "Filma",

@@ -52,7 +52,8 @@ import {
   getInAppNotifications,
   markNotificationRead,
   deleteInAppNotification,
-  getTopCatalogStats
+  getTopCatalogStats,
+  getContentStats
 } from './src/server/tursoDb';
 import { getBackupDb, fetchCloudSqlAuditLogs, fetchCloudSqlMessages, backupRecordToCloudSql } from './src/db/backupDb';
 
@@ -1428,7 +1429,21 @@ app.get('/api/catalog-facts', async (req, res) => {
   }
 });
 
-// Likes
+// Likes & Content Stats
+app.get('/api/turso/stats', async (req, res) => {
+  const { contentId, userId } = req.query;
+  if (!contentId || typeof contentId !== 'string') {
+    return res.status(400).json({ error: 'Content ID required' });
+  }
+  try {
+    const data = await getContentStats(contentId, userId ? String(userId) : undefined);
+    return res.json({ success: true, ...data });
+  } catch (err: any) {
+    console.error('[Turso API] Stats GET error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch content stats' });
+  }
+});
+
 app.get('/api/turso/likes', async (req, res) => {
   const { contentId, userId } = req.query;
   if (!contentId || typeof contentId !== 'string') {
@@ -1490,7 +1505,7 @@ app.get('/api/turso/comments', async (req, res) => {
       contentId,
       requestingUserId || undefined,
       since ? String(since) : undefined,
-      limit ? Number(limit) : 50,
+      limit ? Number(limit) : 10,
       offset ? Number(offset) : 0
     );
     return res.json({ success: true, comments });

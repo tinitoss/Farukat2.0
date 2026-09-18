@@ -938,9 +938,9 @@ export default function App() {
     });
   }, [account]);
 
-  const handleToggleLike = React.useCallback((id: string) => {
+  const handleToggleLike = React.useCallback((id: string, skipDbSync = false) => {
     triggerHaptic(account, 'light');
-    setLikes((prev) => toggleStoredLike(id, prev));
+    setLikes((prev) => toggleStoredLike(id, prev, undefined, skipDbSync));
   }, [account]);
 
   const handleToggleDownload = React.useCallback((id: string) => {
@@ -967,6 +967,115 @@ export default function App() {
   // Dynamic Managed Catalog & Custom Ranked Sections
   const [activeCatalog, setActiveCatalog] = useState<MediaItem[]>(() => getManagedCatalog(MEDIA_CATALOG));
   const [customSections, setCustomSections] = useState<SectionConfig[]>(() => getCustomSections());
+
+  // Home Screen Preload & Splash Screen States
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      const shown = sessionStorage.getItem('farukat_home_splash_shown_session');
+      return !shown;
+    } catch {
+      return true;
+    }
+  });
+  const [splashFadeOut, setSplashFadeOut] = useState(false);
+  const [isPreloading, setIsPreloading] = useState(false);
+
+  // Home Screen Image Preload Effect
+  useEffect(() => {
+    if (!showSplash) return;
+
+    let active = true;
+    setIsPreloading(true);
+
+    const getPreloadImagesList = () => {
+      const list: string[] = [];
+      
+      // 1. Featured rotating hero carousel images (HeroBanner)
+      if (Array.isArray(FEATURED_HERO_ITEMS)) {
+        FEATURED_HERO_ITEMS.forEach(item => {
+          if (item.backdrop) list.push(item.backdrop);
+          if (item.poster) list.push(item.poster);
+          if (item.thumbnail) list.push(item.thumbnail);
+        });
+      }
+      
+      // 2. Universes background images
+      const universeBgImages = [
+        'https://i.postimg.cc/N0N574Xt/file-00000000bc2c81f4869e8118fdbca30e.png',
+        'https://i.postimg.cc/cJkFn4pB/file-0000000081d481f489daa25eee83bdd4.png',
+        'https://i.postimg.cc/tJs0069q/file-00000000e32881f4a11bcd855d37478c.png'
+      ];
+      universeBgImages.forEach(img => list.push(img));
+
+      // 3. User Avatar
+      if (account?.profile?.avatarUrl) {
+        list.push(account.profile.avatarUrl);
+      }
+
+      // 4. Initial catalog items' posters for movie rows (first 4 items for each custom section)
+      if (Array.isArray(customSections)) {
+        customSections.forEach(sec => {
+          const secItems = MEDIA_CATALOG.filter(
+            (m) =>
+              !m.isHidden &&
+              (m.category === sec.id ||
+                m.originalSection === sec.id ||
+                (sec.id === 'series' && (m.isSeries || m.category === 'series' || m.originalSection === 'featured-series')) ||
+                (sec.id === 'scifi' && (m.originalSection === 'scifi-collection' || (m.category === 'scifi' && m.originalSection !== 'the-end-saga'))) ||
+                (sec.id === 'horror' && (m.category === 'horror' || m.originalSection === 'horror' || m.originalSection === 'horror-specials')) ||
+                (sec.id === 'skits' && (m.category === 'skits' || m.originalSection === 'funny-skits')) ||
+                (sec.id === 'behind' && (m.category === 'behind' || m.category === 'deleted' || m.originalSection === 'behind-scenes' || m.originalSection === 'deleted-scenes')) ||
+                (sec.id === 'specials' && (m.category === 'specials' || m.originalSection === 'special-features')))
+          ).slice(0, 4);
+
+          secItems.forEach(item => {
+            if (item.poster) list.push(item.poster);
+            if (item.thumbnail) list.push(item.thumbnail);
+          });
+        });
+      }
+
+      return Array.from(new Set(list.filter(Boolean)));
+    };
+
+    const preloadImage = (url: string): Promise<void> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.src = url;
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+      });
+    };
+
+    const imageUrls = getPreloadImagesList();
+
+    const startPreloading = async () => {
+      // 2.5 second fallback timeout as requested
+      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 2500));
+      const preloadingPromise = Promise.all(imageUrls.map(preloadImage));
+
+      await Promise.race([preloadingPromise, timeoutPromise]);
+
+      if (active) {
+        setSplashFadeOut(true);
+        setTimeout(() => {
+          if (active) {
+            setShowSplash(false);
+            setIsPreloading(false);
+            try {
+              sessionStorage.setItem('farukat_home_splash_shown_session', 'true');
+            } catch {}
+          }
+        }, 700); // Wait for transition fade out to complete before removing from DOM
+      }
+    };
+
+    startPreloading();
+
+    return () => {
+      active = false;
+    };
+  }, [showSplash, account?.profile?.avatarUrl, customSections]);
 
   // Deep-link from In-App Notifications directly into video player with comment focused
   const handleNotificationNavigateToContent = React.useCallback(
@@ -1160,6 +1269,43 @@ export default function App() {
     <div 
       className={`relative h-screen w-full overflow-hidden bg-[var(--bg-main)] text-[var(--text-primary)] font-sans select-none ${account?.stats?.enableHighContrast ? 'high-contrast-mode' : ''} ${account?.stats?.enableLightMode ? 'light-mode' : ''}`}
     >
+      {/* 2.7.0 Gold Splash Preloader Screen */}
+      {showSplash && (
+        <div
+          id="home-splash-screen"
+          className={`fixed inset-0 z-[9999] bg-[#E2B14C] text-black flex flex-col items-center justify-between p-12 transition-all duration-700 ease-in-out select-none ${
+            splashFadeOut ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
+          }`}
+        >
+          {/* Top section: subtle spacing / Branding Icon */}
+          <div className="w-full flex justify-center pt-8">
+            <FarukatLogo size="lg" textColor="text-black" variant="white" showText={false} useFullImage={false} />
+          </div>
+
+          {/* Middle Section: Elegant Welcoming Message with High Contrast Display Typography */}
+          <div className="text-center space-y-3.5 px-4 animate-fadeIn">
+            <div className="inline-flex p-3 rounded-full bg-black/10 border border-black/15 shadow-sm">
+              <ShieldCheck className="w-8 h-8 text-black stroke-[1.5]" />
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight uppercase font-mono max-w-sm mx-auto leading-tight">
+              {t('common.welcomeBackUser', { name: account?.profile?.name || 'Cinephile' }, `Welcome back, ${account?.profile?.name || 'Cinephile'}`)}
+            </h1>
+            <p className="text-[10px] uppercase tracking-widest text-black/60 font-mono font-bold">
+              {t('common.appName', undefined, 'FARUKAT Cinema')} • {t('common.guest', undefined, 'Verified Member')}
+            </p>
+          </div>
+
+          {/* Bottom Section: Sleek CSS Loader & preloading progress info */}
+          <div className="w-full flex flex-col items-center gap-4 pb-8">
+            {/* Smooth animated spinner wheel */}
+            <div className="w-10 h-10 rounded-full border-[3px] border-black border-t-transparent animate-spin opacity-85" />
+            <span className="text-[10px] uppercase tracking-wider text-black/50 font-mono font-black animate-pulse">
+              {t('common.loading', undefined, 'PRELOADING CINEMA EXPERIENCE...')}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Scrollable Main Viewport */}
       <div
         ref={mainScrollRef}

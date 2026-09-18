@@ -36,7 +36,7 @@ interface MediaDetailModalProps {
   watchlist: string[];
   onToggleWatchlist: (id: string) => void;
   likes: string[];
-  onToggleLike: (id: string) => void;
+  onToggleLike: (id: string, skipDbSync?: boolean) => void;
   ratings?: Record<string, number>;
   onRate?: (mediaId: string, stars: number) => void;
   downloads?: string[];
@@ -149,31 +149,32 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
     return () => { isMounted = false; };
   }, [item?.id, userId]);
 
-  const handleToggleLikeDb = async () => {
+  const handleToggleLikeDb = () => {
     if (!item) return;
     if (isGuest) {
       alert('Sign in to interact with community features like Likes & Comments.');
       return;
     }
-    if (isLikeTransitioning) return;
-    setIsLikeTransitioning(true);
 
     const previousLiked = dbUserLiked;
     const previousCount = dbLikesCount;
-    setDbUserLiked(!previousLiked);
-    setDbLikesCount((prev) => previousLiked ? Math.max(0, prev - 1) : prev + 1);
 
-    try {
-      const result = await toggleLikeInDb(item.id, userId);
+    const nextLiked = !previousLiked;
+    const nextCount = nextLiked ? previousCount + 1 : Math.max(0, previousCount - 1);
+
+    // Optimistic UI update instantly
+    setDbUserLiked(nextLiked);
+    setDbLikesCount(nextCount);
+
+    toggleLikeInDb(item.id, userId).then(result => {
       setDbUserLiked(result.active);
       setDbLikesCount(result.likesCount);
-      onToggleLike(item.id);
-    } catch (err) {
+      onToggleLike(item.id, true);
+    }).catch(() => {
+      // Revert on failure
       setDbUserLiked(previousLiked);
       setDbLikesCount(previousCount);
-    } finally {
-      setIsLikeTransitioning(false);
-    }
+    });
   };
 
   const handleRate = (stars: number) => {

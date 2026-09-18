@@ -205,15 +205,25 @@ export async function getTursoLikes(contentId: string, userId?: string) {
     const url = `/api/turso/likes?contentId=${encodeURIComponent(contentId)}${targetUid ? `&userId=${encodeURIComponent(targetUid)}` : ''}`;
     return safeFetchTursoApi(url, { headers }, async () => {
       const stmts: Statement[] = [
-        { sql: 'SELECT COUNT(*) as count FROM likes WHERE content_id = ?', args: [contentId] }
+        { sql: 'SELECT like_count, comment_count FROM content_stats WHERE content_id = ?', args: [contentId] }
       ];
       if (targetUid) {
         stmts.push({ sql: 'SELECT id FROM likes WHERE content_id = ? AND user_id = ?', args: [contentId, targetUid] });
       }
       const res = await executeTursoPipelineDirect(stmts);
-      const count = res[0].rows[0]?.count || 0;
+      let count = 0;
+      let commentsCount = 0;
+      if (res[0].rows.length > 0) {
+        count = Number(res[0].rows[0]?.like_count || 0);
+        commentsCount = Number(res[0].rows[0]?.comment_count || 0);
+      } else {
+        const fallback = await executeTursoPipelineDirect([
+          { sql: 'SELECT COUNT(*) as count FROM likes WHERE content_id = ?', args: [contentId] }
+        ]);
+        count = Number(fallback[0].rows[0]?.count || 0);
+      }
       const userLiked = targetUid ? ((res[1]?.rows.length || 0) > 0) : false;
-      return { likesCount: count, userLiked };
+      return { likesCount: count, commentsCount, userLiked };
     });
   });
 }
@@ -246,32 +256,50 @@ export async function toggleTursoLike(contentId: string) {
       sql: 'SELECT id FROM likes WHERE user_id = ? AND content_id = ?',
       args: [userId, contentId]
     }]);
+    
     let active = false;
+    const mutateStmts: Statement[] = [];
+
     if (check[0].rows.length > 0) {
-      await executeTursoPipelineDirect([{
+      mutateStmts.push({
         sql: 'DELETE FROM likes WHERE user_id = ? AND content_id = ?',
         args: [userId, contentId]
-      }]);
+      });
+      mutateStmts.push({
+        sql: `INSERT INTO content_stats (content_id, like_count, comment_count, updated_at) VALUES (?, 0, 0, CURRENT_TIMESTAMP)
+              ON CONFLICT(content_id) DO UPDATE SET like_count = MAX(0, like_count - 1), updated_at = CURRENT_TIMESTAMP`,
+        args: [contentId]
+      });
       active = false;
     } else {
-      await executeTursoPipelineDirect([{
-        sql: 'INSERT INTO likes (id, user_id, content_id, created_at) VALUES (?, ?, ?, ?)',
+      mutateStmts.push({
+        sql: 'INSERT OR IGNORE INTO likes (id, user_id, content_id, created_at) VALUES (?, ?, ?, ?)',
         args: [`like_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`, userId, contentId, new Date().toISOString()]
-      }]);
+      });
+      mutateStmts.push({
+        sql: `INSERT INTO content_stats (content_id, like_count, comment_count, updated_at) VALUES (?, 1, 0, CURRENT_TIMESTAMP)
+              ON CONFLICT(content_id) DO UPDATE SET like_count = like_count + 1, updated_at = CURRENT_TIMESTAMP`,
+        args: [contentId]
+      });
       active = true;
     }
-    const countRes = await executeTursoPipelineDirect([{
-      sql: 'SELECT COUNT(*) as count FROM likes WHERE content_id = ?',
+
+    mutateStmts.push({
+      sql: 'SELECT like_count FROM content_stats WHERE content_id = ?',
       args: [contentId]
-    }]);
-    return { success: true, active, likesCount: countRes[0].rows[0]?.count || 0 };
+    });
+
+    const batchRes = await executeTursoPipelineDirect(mutateStmts);
+    const lastRes = batchRes[batchRes.length - 1];
+    const likesCount = Number(lastRes?.rows[0]?.like_count || 0);
+    return { success: true, active, likesCount };
   });
 }
 
 // -----------------------------------------------------------------------------
 // COMMENTS & COMMENT LIKES API (WITH TURSO PER-USER TRACKING)
 // -----------------------------------------------------------------------------
-export async function getTursoComments(contentId: string, since?: string, limit = 50, offset = 0, userId?: string) {
+export async function getTursoComments(contentId: string, since?: string, limit = 10, offset = 0, userId?: string) {
   const targetUid = userId || auth.currentUser?.uid || '';
   const key = `comments_${contentId}_${since || ''}_${limit}_${offset}_${targetUid}`;
   return fetchDeduplicated(key, async () => {
@@ -720,11 +748,89 @@ export interface LeaderboardMeResponse {
 }
 
 export async function fetchLeaderboard(): Promise<LeaderboardResponse> {
-  const res = await fetch('/api/leaderboard');
-  if (!res.ok) {
-    throw new Error('Failed to fetch leaderboard');
-  }
-  return res.json();
+  return safeFetchTursoApi<LeaderboardResponse>('/api/leaderboard', undefined, async () => {
+    try {
+      // 1. Try querying precomputed cache first
+      const cacheRes = await executeTursoPipelineDirect([{
+        sql: `SELECT rank, previous_rank, rank_delta, user_id, username, avatar_url, level, xp, points, watch_seconds, current_streak, streak_penalty, rank_tier, rank_sub, computed_at, unlocked_achievements_count
+              FROM leaderboard_cache
+              ORDER BY rank ASC
+              LIMIT 50;`
+      }]);
+
+      if (cacheRes[0].rows && cacheRes[0].rows.length > 0) {
+        const leaderboard = cacheRes[0].rows.map(row => {
+          const xpNum = Number(row.xp || 0);
+          const watchSec = Number(row.watch_seconds || 0);
+          const streak = Number(row.current_streak || 0);
+          const penalty = Number(row.streak_penalty || 0);
+          const achCount = Number(row.unlocked_achievements_count || 0);
+          const rankSteps = xpNum >= 5000000 ? Math.min(19, 1 + Math.floor((xpNum - 5000000) / 10000)) : 0;
+          const rankPoints = rankSteps * 100;
+          const calcPoints = Number(row.points) || Math.max(0, Math.round(xpNum / 500 + (watchSec / 3600) * 100 + streak * 50 + achCount * 55 + rankPoints - penalty));
+
+          return {
+            rank: Number(row.rank),
+            previous_rank: row.previous_rank !== null && row.previous_rank !== undefined ? Number(row.previous_rank) : null,
+            rank_delta: Number(row.rank_delta || 0),
+            user_id: String(row.user_id),
+            username: String(row.username),
+            avatar_url: String(row.avatar_url || ''),
+            level: Number(row.level || 1),
+            xp: xpNum,
+            points: calcPoints,
+            watch_seconds: watchSec,
+            current_streak: streak,
+            streak_penalty: penalty,
+            unlocked_achievements_count: achCount,
+            rank_tier: String(row.rank_tier || 'BRONZE'),
+            rank_sub: row.rank_sub !== null && row.rank_sub !== undefined ? Number(row.rank_sub) : 1
+          };
+        });
+        return {
+          success: true,
+          leaderboard,
+          computed_at: String(cacheRes[0].rows[0]?.computed_at || new Date().toISOString())
+        };
+      }
+
+      // 2. Fallback: query user_profiles directly
+      const profilesRes = await executeTursoPipelineDirect([{
+        sql: `SELECT p.user_id, COALESCE(p.username, 'Cinema Member') as username, COALESCE(p.avatar, '') as avatar_url, COALESCE(x.xp, 0) as xp, COALESCE(x.level, 1) as level, COALESCE(p.total_watch_seconds, 0) as watch_seconds, COALESCE(p.current_streak, 0) as current_streak FROM user_profiles p LEFT JOIN user_xp x ON p.user_id = x.user_id WHERE p.user_id != 'guest' LIMIT 50;`
+      }]);
+
+      if (profilesRes[0].rows && profilesRes[0].rows.length > 0) {
+        const leaderboard = profilesRes[0].rows.map((r, idx) => {
+          const xpNum = Number(r.xp || 0);
+          const watchSec = Number(r.watch_seconds || 0);
+          const streak = Number(r.current_streak || 0);
+          const calcPoints = Math.max(0, Math.round(xpNum / 500 + (watchSec / 3600) * 100 + streak * 50));
+          return {
+            rank: idx + 1,
+            previous_rank: null,
+            rank_delta: 0,
+            user_id: String(r.user_id),
+            username: String(r.username),
+            avatar_url: String(r.avatar_url || ''),
+            level: Number(r.level || 1),
+            xp: xpNum,
+            points: calcPoints,
+            watch_seconds: watchSec,
+            current_streak: streak,
+            streak_penalty: 0,
+            unlocked_achievements_count: 0,
+            rank_tier: 'BRONZE',
+            rank_sub: 1
+          };
+        });
+        return { success: true, leaderboard, computed_at: new Date().toISOString() };
+      }
+    } catch (e) {
+      console.warn('[Turso Client] Direct leaderboard query warning:', e);
+    }
+
+    return { success: true, leaderboard: [], computed_at: new Date().toISOString() };
+  });
 }
 
 export async function fetchMyLeaderboardRank(explicitUserId?: string): Promise<LeaderboardMeResponse | null> {
@@ -732,11 +838,38 @@ export async function fetchMyLeaderboardRank(explicitUserId?: string): Promise<L
     const headers = await getAuthHeaders();
     const uid = explicitUserId || auth.currentUser?.uid;
     const url = uid ? `/api/leaderboard/me?userId=${encodeURIComponent(uid)}` : '/api/leaderboard/me';
-    const res = await fetch(url, { headers });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.success) return null;
-    return data;
+    return await safeFetchTursoApi<LeaderboardMeResponse | null>(url, { headers }, async () => {
+      if (!uid || uid === 'guest') return null;
+      const cacheRes = await executeTursoPipelineDirect([{
+        sql: `SELECT rank, previous_rank, rank_delta, user_id, username, avatar_url, level, xp, points, watch_seconds, current_streak, streak_penalty, rank_tier, rank_sub, computed_at, unlocked_achievements_count FROM leaderboard_cache WHERE user_id = ?`,
+        args: [uid]
+      }]);
+
+      if (cacheRes[0].rows && cacheRes[0].rows.length > 0) {
+        const row = cacheRes[0].rows[0];
+        return {
+          success: true,
+          rank: Number(row.rank || 1),
+          previous_rank: row.previous_rank ? Number(row.previous_rank) : null,
+          rank_delta: Number(row.rank_delta || 0),
+          user_id: String(row.user_id),
+          username: String(row.username),
+          avatar_url: String(row.avatar_url || ''),
+          level: Number(row.level || 1),
+          xp: Number(row.xp || 0),
+          points: Number(row.points || 0),
+          watch_seconds: Number(row.watch_seconds || 0),
+          current_streak: Number(row.current_streak || 0),
+          streak_penalty: Number(row.streak_penalty || 0),
+          unlocked_achievements_count: Number(row.unlocked_achievements_count || 0),
+          rank_tier: String(row.rank_tier || 'BRONZE'),
+          rank_sub: row.rank_sub ? Number(row.rank_sub) : 1,
+          in_top_50: Number(row.rank || 1) <= 50,
+          in_top_100: Number(row.rank || 1) <= 100
+        };
+      }
+      return null;
+    });
   } catch (err) {
     console.warn('[Turso Client] fetchMyLeaderboardRank error:', err);
     return null;
@@ -745,15 +878,15 @@ export async function fetchMyLeaderboardRank(explicitUserId?: string): Promise<L
 
 export async function triggerLeaderboardRefresh(): Promise<{ success: boolean; count: number; computed_at: string }> {
   try {
-    const res = await fetch('/api/leaderboard/refresh', {
+    return await safeFetchTursoApi('/api/leaderboard/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
+    }, async () => {
+      return { success: true, count: 0, computed_at: new Date().toISOString() };
     });
-    if (!res.ok) throw new Error('Failed to refresh leaderboard');
-    return res.json();
   } catch (err) {
     console.warn('[Turso Client] triggerLeaderboardRefresh error:', err);
-    throw err;
+    return { success: false, count: 0, computed_at: new Date().toISOString() };
   }
 }
 

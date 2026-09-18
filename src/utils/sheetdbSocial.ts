@@ -58,53 +58,119 @@ export async function fetchLikesForContent(contentId: string, currentUserId?: st
   }
 }
 
+// Pending like debounce map for atomic batching
+interface LikeDebounceTask {
+  contentId: string;
+  initialUserLiked: boolean;
+  initialLikesCount: number;
+  currentUserLiked: boolean;
+  currentLikesCount: number;
+  timer: any;
+  resolvers: Array<(val: { active: boolean; likesCount: number }) => void>;
+  rejecters: Array<(err: any) => void>;
+}
+
+const likeDebounceMap = new Map<string, LikeDebounceTask>();
+
 /**
- * Toggle a like in Turso database with optimistic cache update
+ * Toggle a like in Turso database with optimistic cache update and debouncing
  */
 export async function toggleLikeInDb(contentId: string, currentUserId?: string): Promise<{ active: boolean; likesCount: number }> {
   if (!auth.currentUser) {
     throw new Error('Must be signed in to like content.');
   }
 
-  const cached = likesCountCache.get(contentId);
-  const currentCount = cached ? cached.count : 0;
-  const currentlyLiked = cached ? !!cached.userLiked : false;
+  return new Promise((resolve, reject) => {
+    let task = likeDebounceMap.get(contentId);
 
-  const active = !currentlyLiked;
-  const newCount = active ? currentCount + 1 : Math.max(0, currentCount - 1);
+    const cached = likesCountCache.get(contentId);
+    const startCount = cached ? cached.count : 0;
+    const startLiked = cached ? !!cached.userLiked : false;
 
-  // Optimistic memory update
-  likesCountCache.set(contentId, { count: newCount, userLiked: active, timestamp: Date.now() });
+    if (!task) {
+      const nextLiked = !startLiked;
+      const nextCount = nextLiked ? startCount + 1 : Math.max(0, startCount - 1);
 
-  try {
-    const res = await toggleTursoLike(contentId);
-    const finalCount = res.likesCount ?? newCount;
-    const finalActive = res.active ?? active;
+      // Optimistic memory update immediately
+      likesCountCache.set(contentId, { count: nextCount, userLiked: nextLiked, timestamp: Date.now() });
 
-    likesCountCache.set(contentId, { count: finalCount, userLiked: finalActive, timestamp: Date.now() });
-    return { active: finalActive, likesCount: finalCount };
-  } catch (err) {
-    console.error(`[Turso Social] Toggle like failed for ${contentId}:`, err);
-    // Rollback on failure
-    likesCountCache.set(contentId, { count: currentCount, userLiked: currentlyLiked, timestamp: Date.now() });
-    throw err;
-  }
+      task = {
+        contentId,
+        initialUserLiked: startLiked,
+        initialLikesCount: startCount,
+        currentUserLiked: nextLiked,
+        currentLikesCount: nextCount,
+        timer: null,
+        resolvers: [resolve],
+        rejecters: [reject]
+      };
+      likeDebounceMap.set(contentId, task);
+    } else {
+      task.resolvers.push(resolve);
+      task.rejecters.push(reject);
+      if (task.timer) {
+        clearTimeout(task.timer);
+      }
+
+      task.currentUserLiked = !task.currentUserLiked;
+      task.currentLikesCount = task.currentUserLiked
+        ? task.currentLikesCount + 1
+        : Math.max(0, task.currentLikesCount - 1);
+
+      // Update optimistic cache immediately
+      likesCountCache.set(contentId, { count: task.currentLikesCount, userLiked: task.currentUserLiked, timestamp: Date.now() });
+    }
+
+    // Debounce timer (350ms)
+    task.timer = setTimeout(async () => {
+      likeDebounceMap.delete(contentId);
+
+      // Check if net state changed compared to initial state before rapid tapping
+      if (task!.initialUserLiked === task!.currentUserLiked) {
+        const result = { active: task!.currentUserLiked, likesCount: task!.currentLikesCount };
+        task!.resolvers.forEach(r => r(result));
+        return;
+      }
+
+      try {
+        const res = await toggleTursoLike(contentId);
+        const finalCount = res.likesCount ?? task!.currentLikesCount;
+        const finalActive = res.active ?? task!.currentUserLiked;
+
+        likesCountCache.set(contentId, { count: finalCount, userLiked: finalActive, timestamp: Date.now() });
+        const result = { active: finalActive, likesCount: finalCount };
+        task!.resolvers.forEach(r => r(result));
+      } catch (err) {
+        // Rollback optimistic cache on write error
+        likesCountCache.set(contentId, { count: task!.initialLikesCount, userLiked: task!.initialUserLiked, timestamp: Date.now() });
+        task!.rejecters.forEach(rj => rj(err));
+      }
+    }, 350);
+  });
 }
 
 /**
- * Fetch comments for a content item from Turso with true like counts and user liked state
+ * Fetch comments for a content item from Turso with pagination (top 10 by default)
  */
-export async function fetchCommentsForContent(contentId: string, currentUserId?: string, forceRefresh = false): Promise<SheetDbComment[]> {
+export async function fetchCommentsForContent(
+  contentId: string,
+  currentUserId?: string,
+  forceRefresh = false,
+  limit = 10,
+  offset = 0
+): Promise<SheetDbComment[] & { hasMore?: boolean }> {
   const effectiveUid = currentUserId || auth.currentUser?.uid || '';
-  const cacheKey = `farukat_comments_${contentId}_${effectiveUid}`;
+  const cacheKey = `farukat_comments_${contentId}_${offset}_${effectiveUid}`;
   try {
-    const cached = commentsCache.get(`${contentId}_${effectiveUid}`);
+    const cached = commentsCache.get(`${contentId}_${offset}_${effectiveUid}`);
     const now = Date.now();
     if (!forceRefresh && cached && (now - cached.timestamp < CACHE_TTL_MS)) {
-      return cached.comments;
+      const res = [...cached.comments] as SheetDbComment[] & { hasMore?: boolean };
+      res.hasMore = cached.comments.length >= limit;
+      return res;
     }
 
-    const data = await getTursoComments(contentId, undefined, 50, 0, effectiveUid);
+    const data = await getTursoComments(contentId, undefined, limit, offset, effectiveUid);
     const comments: SheetDbComment[] = (data.comments || []).map((c: any) => ({
       commentId: c.commentId || c.id,
       contentId: c.contentId || c.content_id,
@@ -118,19 +184,29 @@ export async function fetchCommentsForContent(contentId: string, currentUserId?:
       userLiked: Boolean(c.userLiked || c.user_liked)
     }));
 
-    commentsCache.set(`${contentId}_${effectiveUid}`, { comments, timestamp: now });
+    commentsCache.set(`${contentId}_${offset}_${effectiveUid}`, { comments, timestamp: now });
     try {
       localStorage.setItem(cacheKey, JSON.stringify(comments));
     } catch {}
 
-    return comments;
+    const res = [...comments] as SheetDbComment[] & { hasMore?: boolean };
+    res.hasMore = comments.length >= limit;
+    return res;
   } catch (err) {
     console.warn(`[Turso Social] Fetch comments notice for ${contentId}:`, err);
     try {
       const localRaw = localStorage.getItem(cacheKey);
-      if (localRaw) return JSON.parse(localRaw);
+      if (localRaw) {
+        const parsed = JSON.parse(localRaw);
+        const res = [...parsed] as SheetDbComment[] & { hasMore?: boolean };
+        res.hasMore = parsed.length >= limit;
+        return res;
+      }
     } catch {}
-    return commentsCache.get(`${contentId}_${effectiveUid}`)?.comments || [];
+    const fallback = commentsCache.get(`${contentId}_${offset}_${effectiveUid}`)?.comments || [];
+    const res = [...fallback] as SheetDbComment[] & { hasMore?: boolean };
+    res.hasMore = fallback.length >= limit;
+    return res;
   }
 }
 
