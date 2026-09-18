@@ -6,6 +6,19 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
   included_files = ["firebase-applet-config.json"]
+  external_node_modules = [
+    "firebase-admin",
+    "googleapis",
+    "google-auth-library",
+    "pg",
+    "drizzle-orm",
+    "@libsql/client",
+    "@google/genai",
+    "express",
+    "nodemailer",
+    "cors",
+    "serverless-http"
+  ]
 
 # Serve Web App Manifest with correct MIME type and short cache
 [[headers]]

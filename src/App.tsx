@@ -1269,7 +1269,7 @@ export default function App() {
     <div 
       className={`relative h-screen w-full overflow-hidden bg-[var(--bg-main)] text-[var(--text-primary)] font-sans select-none ${account?.stats?.enableHighContrast ? 'high-contrast-mode' : ''} ${account?.stats?.enableLightMode ? 'light-mode' : ''}`}
     >
-      {/* 2.7.0 Gold Splash Preloader Screen */}
+      {/* 2.7.1 Gold Splash Preloader Screen */}
       {showSplash && (
         <div
           id="home-splash-screen"
