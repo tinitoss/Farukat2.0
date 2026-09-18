@@ -2231,7 +2231,7 @@ async function startServer() {
   }
 
   if (!process.env.NETLIFY) {
-    app.listen(PORT, '0.0.0.0', () => {
+    app.listen(Number(PORT) || 3000, '0.0.0.0', () => {
       console.log(`[FARUKAT SERVER] Server bound to 0.0.0.0 on port ${PORT}`);
     });
   }

@@ -3,19 +3,17 @@ import { app, getClientFirestoreInstance } from '../../server';
 import { initTursoTables } from '../../src/server/tursoDb';
 
 let initialized = false;
+const serverlessHandler = serverless(app);
 
-const handler = async (event: any, context: any) => {
+export const handler = async (event: any, context: any) => {
   if (!initialized) {
-    try {
-      getClientFirestoreInstance();
-      await initTursoTables();
-      initialized = true;
-    } catch (e) {
-      console.error('Failed to init in serverless', e);
-    }
+    initialized = true;
+    Promise.all([
+      getClientFirestoreInstance(),
+      initTursoTables()
+    ]).catch(e => console.error('[Netlify Serverless] Init warning:', e));
   }
   
-  // Rewrite event.path so Netlify matches Express route definitions (/api/...)
   if (event.path) {
     if (event.path.startsWith('/.netlify/functions/api')) {
       event.path = event.path.replace(/^\/\.netlify\/functions\/api/, '/api');
@@ -25,8 +23,6 @@ const handler = async (event: any, context: any) => {
     }
   }
   
-  const serverlessHandler = serverless(app);
   return serverlessHandler(event, context);
 };
 
-export { handler };

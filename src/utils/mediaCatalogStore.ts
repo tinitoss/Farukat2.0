@@ -1,5 +1,6 @@
 import { MediaItem } from '../types';
 import { MEDIA_CATALOG } from '../data/mediaData';
+import { executeTursoPipelineDirect } from './directTursoPipeline';
 
 const CUSTOM_VIDEOS_KEY = 'farukat_custom_videos';
 const HIDDEN_VIDEOS_KEY = 'farukat_hidden_video_ids';
@@ -381,23 +382,46 @@ export async function syncCatalogToTurso(): Promise<boolean> {
     const heroSettings = getHeroSettings();
     const customSections = getCustomSections();
 
-    const res = await fetch('/api/turso/catalog/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customVideos,
-        hiddenVideoIds,
-        deletedVideoIds,
-        newVideoIds,
-        removedNewVideoIds,
-        heroSettings,
-        customSections,
-      }),
-    });
+    try {
+      const res = await fetch('/api/turso/catalog/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customVideos,
+          hiddenVideoIds,
+          deletedVideoIds,
+          newVideoIds,
+          removedNewVideoIds,
+          heroSettings,
+          customSections,
+        }),
+      });
 
-    if (res.ok) {
-      return true;
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        return true;
+      }
+    } catch (err) {
+      console.warn('[Turso Sync] Relative endpoint unreachable, using direct HTTP pipeline...', err);
     }
+
+    const items = [
+      { key: 'custom_videos', val: customVideos },
+      { key: 'hidden_video_ids', val: hiddenVideoIds },
+      { key: 'deleted_video_ids', val: deletedVideoIds },
+      { key: 'new_video_ids', val: newVideoIds },
+      { key: 'removed_new_video_ids', val: removedNewVideoIds },
+      { key: 'hero_settings', val: heroSettings },
+      { key: 'custom_sections', val: customSections }
+    ];
+
+    const stmts = items.map(item => ({
+      sql: 'INSERT INTO media_catalog_state (key_name, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key_name) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at',
+      args: [item.key, JSON.stringify(item.val), new Date().toISOString()]
+    }));
+
+    await executeTursoPipelineDirect(stmts);
+    return true;
   } catch (err) {
     console.warn('[Turso Sync] Failed to push catalog state to Turso DB:', err);
   }
@@ -409,25 +433,53 @@ export async function syncCatalogToTurso(): Promise<boolean> {
  */
 export async function syncCatalogFromTurso(): Promise<boolean> {
   try {
-    const res = await fetch('/api/turso/catalog');
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.success) {
-        if (Array.isArray(data.customVideos)) saveCustomVideos(data.customVideos);
-        if (Array.isArray(data.hiddenVideoIds)) saveHiddenVideoIds(data.hiddenVideoIds);
-        if (Array.isArray(data.deletedVideoIds)) saveDeletedVideoIds(data.deletedVideoIds);
-        if (Array.isArray(data.newVideoIds)) saveNewVideoIds(data.newVideoIds);
-        if (Array.isArray(data.removedNewVideoIds)) saveRemovedNewVideoIds(data.removedNewVideoIds);
-        if (Array.isArray(data.heroSettings) && data.heroSettings.length > 0) {
-          localStorage.setItem(HERO_SETTINGS_KEY, JSON.stringify(data.heroSettings));
-        }
-        if (Array.isArray(data.customSections) && data.customSections.length > 0) {
-          localStorage.setItem(CUSTOM_SECTIONS_KEY, JSON.stringify(data.customSections));
-        }
-
-        window.dispatchEvent(new Event('farukat_catalog_updated'));
-        return true;
+    let data: any = null;
+    try {
+      const res = await fetch('/api/turso/catalog');
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('application/json')) {
+        data = await res.json();
       }
+    } catch (err) {
+      console.warn('[Turso Catalog] Relative endpoint unreachable, using direct pipeline...', err);
+    }
+
+    if (!data || !data.success) {
+      const res = await executeTursoPipelineDirect([{
+        sql: 'SELECT key_name, value_json FROM media_catalog_state'
+      }]);
+      data = { success: true };
+      res[0].rows.forEach(r => {
+        try {
+          const val = JSON.parse(r.value_json || '[]');
+          if (r.key_name === 'custom_videos') data.customVideos = val;
+          else if (r.key_name === 'hidden_video_ids') data.hiddenVideoIds = val;
+          else if (r.key_name === 'deleted_video_ids') data.deletedVideoIds = val;
+          else if (r.key_name === 'new_video_ids') data.newVideoIds = val;
+          else if (r.key_name === 'removed_new_video_ids') data.removedNewVideoIds = val;
+          else if (r.key_name === 'hero_settings') data.heroSettings = val;
+          else if (r.key_name === 'custom_sections') data.customSections = val;
+        } catch (e) {
+          console.warn('[Turso Catalog] Failed to parse key:', r.key_name);
+        }
+      });
+    }
+
+    if (data && data.success) {
+      if (Array.isArray(data.customVideos)) saveCustomVideos(data.customVideos);
+      if (Array.isArray(data.hiddenVideoIds)) saveHiddenVideoIds(data.hiddenVideoIds);
+      if (Array.isArray(data.deletedVideoIds)) saveDeletedVideoIds(data.deletedVideoIds);
+      if (Array.isArray(data.newVideoIds)) saveNewVideoIds(data.newVideoIds);
+      if (Array.isArray(data.removedNewVideoIds)) saveRemovedNewVideoIds(data.removedNewVideoIds);
+      if (Array.isArray(data.heroSettings) && data.heroSettings.length > 0) {
+        localStorage.setItem(HERO_SETTINGS_KEY, JSON.stringify(data.heroSettings));
+      }
+      if (Array.isArray(data.customSections) && data.customSections.length > 0) {
+        localStorage.setItem(CUSTOM_SECTIONS_KEY, JSON.stringify(data.customSections));
+      }
+
+      window.dispatchEvent(new Event('farukat_catalog_updated'));
+      return true;
     }
   } catch (err) {
     console.warn('[Turso Sync] Failed to fetch catalog state from Turso DB:', err);

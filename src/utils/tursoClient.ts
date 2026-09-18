@@ -1,4 +1,5 @@
 import { auth } from '../firebase';
+import { executeTursoPipelineDirect, Statement } from './directTursoPipeline';
 
 // Active in-flight request deduplication map
 const pendingRequests = new Map<string, Promise<any>>();
@@ -31,6 +32,37 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   return headers;
 }
 
+/**
+ * Resilient API fetch wrapper:
+ * Tries relative endpoint (/api/turso/*). If Netlify / Vercel returns HTML, 404, or network error,
+ * automatically falls back to Direct Turso REST HTTP Pipeline execution.
+ */
+async function safeFetchTursoApi<T>(
+  url: string,
+  options?: RequestInit,
+  directFallback?: () => Promise<T>
+): Promise<T> {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn(`[Turso Client] Server route ${url} unreachable. Using direct HTTP pipeline...`, err);
+  }
+
+  if (directFallback) {
+    try {
+      return await directFallback();
+    } catch (fallbackErr) {
+      console.error(`[Turso Client] Direct pipeline fallback error for ${url}:`, fallbackErr);
+      throw fallbackErr;
+    }
+  }
+  throw new Error(`Failed to fetch ${url} and no direct fallback available`);
+}
+
 // -----------------------------------------------------------------------------
 // PROFILE & MEMBER API
 // -----------------------------------------------------------------------------
@@ -38,9 +70,15 @@ export async function getTursoProfile() {
   const uid = auth.currentUser?.uid || 'guest';
   return fetchDeduplicated(`profile_${uid}`, async () => {
     const headers = await getAuthHeaders();
-    const res = await fetch('/api/turso/profile', { headers });
-    if (!res.ok) throw new Error('Failed to fetch profile');
-    return res.json();
+    return safeFetchTursoApi('/api/turso/profile', { headers }, async () => {
+      if (uid === 'guest') return { success: true, profile: null };
+      const res = await executeTursoPipelineDirect([{
+        sql: 'SELECT * FROM user_profiles WHERE user_id = ?',
+        args: [uid]
+      }]);
+      const profile = res[0].rows[0] || null;
+      return { success: true, profile };
+    });
   });
 }
 
@@ -165,9 +203,18 @@ export async function getTursoLikes(contentId: string, userId?: string) {
   return fetchDeduplicated(key, async () => {
     const headers = await getAuthHeaders();
     const url = `/api/turso/likes?contentId=${encodeURIComponent(contentId)}${targetUid ? `&userId=${encodeURIComponent(targetUid)}` : ''}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error('Failed to fetch content likes');
-    return res.json();
+    return safeFetchTursoApi(url, { headers }, async () => {
+      const stmts: Statement[] = [
+        { sql: 'SELECT COUNT(*) as count FROM likes WHERE content_id = ?', args: [contentId] }
+      ];
+      if (targetUid) {
+        stmts.push({ sql: 'SELECT id FROM likes WHERE content_id = ? AND user_id = ?', args: [contentId, targetUid] });
+      }
+      const res = await executeTursoPipelineDirect(stmts);
+      const count = res[0].rows[0]?.count || 0;
+      const userLiked = targetUid ? ((res[1]?.rows.length || 0) > 0) : false;
+      return { likesCount: count, userLiked };
+    });
   });
 }
 
@@ -175,22 +222,50 @@ export async function getTursoUserLikes() {
   const uid = auth.currentUser?.uid || 'guest';
   return fetchDeduplicated(`user_likes_${uid}`, async () => {
     const headers = await getAuthHeaders();
-    const res = await fetch('/api/turso/likes/user', { headers });
-    if (!res.ok) throw new Error('Failed to fetch user likes');
-    return res.json();
+    return safeFetchTursoApi('/api/turso/likes/user', { headers }, async () => {
+      if (uid === 'guest') return { likes: [] };
+      const res = await executeTursoPipelineDirect([{
+        sql: 'SELECT content_id FROM likes WHERE user_id = ?',
+        args: [uid]
+      }]);
+      return { likes: res[0].rows.map(r => r.content_id) };
+    });
   });
 }
 
 export async function toggleTursoLike(contentId: string) {
   const headers = await getAuthHeaders();
   const userId = auth.currentUser?.uid;
-  const res = await fetch('/api/turso/likes/toggle', {
+  return safeFetchTursoApi('/api/turso/likes/toggle', {
     method: 'POST',
     headers,
     body: JSON.stringify({ contentId, userId })
+  }, async () => {
+    if (!userId) throw new Error('Must be logged in to like');
+    const check = await executeTursoPipelineDirect([{
+      sql: 'SELECT id FROM likes WHERE user_id = ? AND content_id = ?',
+      args: [userId, contentId]
+    }]);
+    let active = false;
+    if (check[0].rows.length > 0) {
+      await executeTursoPipelineDirect([{
+        sql: 'DELETE FROM likes WHERE user_id = ? AND content_id = ?',
+        args: [userId, contentId]
+      }]);
+      active = false;
+    } else {
+      await executeTursoPipelineDirect([{
+        sql: 'INSERT INTO likes (id, user_id, content_id, created_at) VALUES (?, ?, ?, ?)',
+        args: [`like_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`, userId, contentId, new Date().toISOString()]
+      }]);
+      active = true;
+    }
+    const countRes = await executeTursoPipelineDirect([{
+      sql: 'SELECT COUNT(*) as count FROM likes WHERE content_id = ?',
+      args: [contentId]
+    }]);
+    return { success: true, active, likesCount: countRes[0].rows[0]?.count || 0 };
   });
-  if (!res.ok) throw new Error('Failed to toggle like');
-  return res.json();
 }
 
 // -----------------------------------------------------------------------------
@@ -202,15 +277,22 @@ export async function getTursoComments(contentId: string, since?: string, limit 
   return fetchDeduplicated(key, async () => {
     const headers = await getAuthHeaders();
     let url = `/api/turso/comments?contentId=${encodeURIComponent(contentId)}&limit=${limit}&offset=${offset}`;
-    if (since) {
-      url += `&since=${encodeURIComponent(since)}`;
-    }
-    if (targetUid) {
-      url += `&userId=${encodeURIComponent(targetUid)}`;
-    }
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error('Failed to fetch comments');
-    return res.json();
+    if (since) url += `&since=${encodeURIComponent(since)}`;
+    if (targetUid) url += `&userId=${encodeURIComponent(targetUid)}`;
+
+    return safeFetchTursoApi(url, { headers }, async () => {
+      let sql = 'SELECT * FROM comments WHERE content_id = ?';
+      const args: any[] = [contentId];
+      if (since) {
+        sql += ' AND created_at > ?';
+        args.push(since);
+      }
+      sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+      args.push(limit, offset);
+
+      const res = await executeTursoPipelineDirect([{ sql, args }]);
+      return { success: true, comments: res[0].rows };
+    });
   });
 }
 
@@ -222,14 +304,20 @@ export async function addTursoComment(
   parentCommentId?: string | null
 ) {
   const headers = await getAuthHeaders();
-  const userId = auth.currentUser?.uid;
-  const res = await fetch('/api/turso/comments/add', {
+  const userId = auth.currentUser?.uid || 'guest';
+  return safeFetchTursoApi('/api/turso/comments/add', {
     method: 'POST',
     headers,
     body: JSON.stringify({ contentId, text, username, avatar, parentCommentId, userId })
+  }, async () => {
+    const id = (parentCommentId ? 'rep_' : 'cmt_') + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const now = new Date().toISOString();
+    await executeTursoPipelineDirect([{
+      sql: 'INSERT INTO comments (id, content_id, user_id, username, avatar, text, parent_comment_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [id, contentId, userId, username || 'User', avatar || '', text, parentCommentId || null, now]
+    }]);
+    return { success: true, commentId: id };
   });
-  if (!res.ok) throw new Error('Failed to post comment');
-  return res.json();
 }
 
 export async function deleteTursoComment(commentId: string) {

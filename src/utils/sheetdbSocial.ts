@@ -160,7 +160,7 @@ export async function addCommentToDb(
 
   const res = await addTursoComment(contentId, trimmed, effectiveName, effectiveAvatar, parentId);
   const newComment: SheetDbComment = {
-    commentId: res.comment?.commentId || res.comment?.id || ((parentId ? 'rep_' : 'cmt_') + Date.now()),
+    commentId: res.commentId || ((parentId ? 'rep_' : 'cmt_') + Date.now()),
     contentId,
     userId: auth.currentUser.uid,
     username: effectiveName,
