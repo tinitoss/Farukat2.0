@@ -120,7 +120,7 @@ export const HelpSupportPage: React.FC<HelpSupportPageProps> = ({ onClose }) => 
             <div className="grid grid-cols-2 gap-y-3">
               <div>
                 <p className="text-[10px] uppercase text-[var(--text-muted)] tracking-wider mb-1">{t('help.version', undefined, 'Version')}</p>
-                <p className="text-xs text-[var(--text-primary)] font-mono">2.4.2 (Web)</p>
+                <p className="text-xs text-[var(--text-primary)] font-mono">2.4.3 (Web)</p>
               </div>
               <div>
                 <p className="text-[10px] uppercase text-[var(--text-muted)] tracking-wider mb-1">{t('help.platform', undefined, 'Platform')}</p>

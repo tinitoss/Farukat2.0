@@ -24,47 +24,22 @@ export function getTursoClient(): Client {
     const targetUrl = hasToken ? TURSO_URL : localDbPath;
 
     if (!hasToken) {
-      isUsingLocalFallback = true;
-      console.log(`[Turso DB] TURSO_AUTH_TOKEN is not configured. Falling back to local SQLite database (${localDbPath})...`);
+      console.log(`[Turso DB] TURSO_AUTH_TOKEN not found. Using local SQLite database (${localDbPath})...`);
     } else {
-      console.log(`[Turso DB] Initializing connection to ${TURSO_URL}...`);
+      console.log(`[Turso DB] Connecting to Turso database at ${TURSO_URL}...`);
     }
 
-    try {
-      tursoClient = createClient({
-        url: targetUrl,
-        authToken: hasToken ? TURSO_AUTH_TOKEN : undefined,
-      });
-    } catch (err) {
-      console.warn(`[Turso DB] Failed to create client for ${targetUrl}, switching to ${localDbPath}:`, err);
-      tursoClient = createClient({ url: localDbPath });
-      isUsingLocalFallback = true;
-    }
+    tursoClient = createClient({
+      url: targetUrl,
+      authToken: hasToken ? TURSO_AUTH_TOKEN : undefined,
+    });
   }
   return tursoClient;
 }
 
-export function switchToLocalFallback(): Client {
-  if (!isUsingLocalFallback) {
-    console.warn(`[Turso DB] Remote database authorization failed (401). Switching to local SQLite database (${localDbPath})...`);
-    tursoClient = createClient({ url: localDbPath });
-    isUsingLocalFallback = true;
-    initTursoTables().catch(err => console.error('[Turso DB] Fallback schema init notice:', err));
-  }
-  return tursoClient!;
-}
-
 export async function executeWithTursoFallback<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-  let client = getTursoClient();
-  try {
-    return await fn(client);
-  } catch (err: any) {
-    if (!isUsingLocalFallback && err?.message && (err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('SERVER_ERROR'))) {
-      client = switchToLocalFallback();
-      return await fn(client);
-    }
-    throw err;
-  }
+  const client = getTursoClient();
+  return await fn(client);
 }
 
 /**
